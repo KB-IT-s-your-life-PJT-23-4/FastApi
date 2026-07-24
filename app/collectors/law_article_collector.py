@@ -875,6 +875,68 @@ def log_chunk_statistics(
         dict(section_counter),
     )
 
+def search_gift_tax_law(
+    question: str,
+    top_k: int = 5,
+) -> dict[str, Any]:
+    question = question.strip()
+
+    if not question:
+        raise ValueError(
+            "검색 질문이 비어 있습니다."
+        )
+
+    if top_k <= 0:
+        raise ValueError(
+            "top_k는 1 이상이어야 합니다."
+        )
+
+    collection_count = law_collection.count()
+
+    if collection_count == 0:
+        raise RuntimeError(
+            "법령 원문 컬렉션에 저장된 데이터가 없습니다."
+        )
+
+    query_embedding = create_embeddings(
+        [question]
+    )[0]
+
+    return law_collection.query(
+        query_embeddings=[
+            query_embedding
+        ],
+        n_results=min(
+            top_k,
+            collection_count,
+        ),
+        where={
+            "$and": [
+                {
+                    "document_section": "article"
+                },
+                {
+                    "$or": [
+                        {
+                            "tax_scope": "gift"
+                        },
+                        {
+                            "tax_scope": "both"
+                        },
+                        {
+                            "tax_scope": "common"
+                        },
+                    ]
+                },
+            ]
+        },
+        include=[
+            "documents",
+            "metadatas",
+            "distances",
+        ],
+    )
+
 def collect_and_store_law(
     mst: str,
 ) -> None:
