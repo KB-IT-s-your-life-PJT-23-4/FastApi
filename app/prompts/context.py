@@ -84,3 +84,54 @@ def combine_contexts(
         for context in contexts
         if context and context.strip()
     )
+
+def build_gift_tax_rule_context(
+    *,
+    rate_table: list[dict[str, Any]],
+    deduction_table: dict[str, int],
+) -> str:
+    return f"""
+[서버 제공 증여세 간이 계산 기준]
+
+다음 세율표와 증여재산공제표를 사용하여 간이 세액을 계산하세요.
+
+세율표:
+{json.dumps(
+    rate_table,
+    ensure_ascii=False,
+    indent=2,
+)}
+
+증여재산공제표:
+{json.dumps(
+    deduction_table,
+    ensure_ascii=False,
+    indent=2,
+)}
+
+관계 코드:
+- spouse: 배우자
+- parent_to_adult_child: 부모가 성년 자녀에게 증여
+- parent_to_minor_child: 부모가 미성년 자녀에게 증여
+- child_to_parent: 자녀가 부모에게 증여
+- other_relative: 기타 친족
+- other: 공제 대상이 아닌 기타 관계
+
+세율표 사용 방법:
+1. 현재 증여금액과 합산 대상 과거 증여금액을 더하세요.
+2. 관계에 해당하는 증여재산공제를 차감하세요.
+3. 계산된 과세표준이 속하는 세율 구간을 찾으세요.
+4. 다음 식으로 간이 산출세액을 계산하세요.
+
+   간이 산출세액
+   = 과세표준 × 적용 세율 - 누진공제액
+
+5. 과세표준이 0원 이하라면 간이 산출세액은 0원입니다.
+6. upper_limit이 null인 구간은 상한이 없는 마지막 구간입니다.
+
+중요:
+- 서버가 제공한 세율과 공제액만 사용하세요.
+- 다른 세율이나 공제액을 임의로 적용하지 마세요.
+- 계산 과정을 단계별로 표시하세요.
+- 결과는 확정세액이 아니라 간이 추정액으로 표현하세요.
+""".strip()
