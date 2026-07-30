@@ -1,7 +1,10 @@
 from functools import lru_cache
+from pathlib import Path
 
+from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+BASE_DIR = Path(__file__).resolve().parents[2]
 
 class Settings(BaseSettings):
     app_name: str = "gift-tax-rag-server"
@@ -13,11 +16,12 @@ class Settings(BaseSettings):
     openai_chat_model: str = "gpt-5-nano"
     openai_embedding_model: str = "text-embedding-3-small"
 
-    chroma_path: str = "storage/chroma"
-    chroma_collection_name: str = "gift_tax_documents"
+    chroma_path: str = str(BASE_DIR / "storage" / "chroma")
+    law_collection_name: str = "gift_tax_laws"
+    interpretation_collection_name: str = "nts_interpretations"
 
-    rag_top_k: int = 5
-    rag_min_distance: float = 1.2
+    interpretation_top_k: int = Field(default=4, ge=1, le=20)
+    law_top_k = Field(default=2, ge=1, le=20)
 
     model_config = SettingsConfigDict(
         env_file=".env",
