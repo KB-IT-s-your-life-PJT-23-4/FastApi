@@ -48,3 +48,33 @@ class ClarificationRequest(BaseModel):
     answers: dict[str, Any]
     family: FamilyData | None = None
     product: ProductData | None = None
+
+QuestionIntent = Literal[
+    "concept",
+    "family",
+    "product",
+    "assessment",
+    "procedure",
+    "other_gift",
+    "other",
+    "jailbreak",
+]
+
+
+class QuestionIntentResult(BaseModel):
+    intent: QuestionIntent
+
+    requires_calculation: bool = Field(
+        default=False,
+        description="증여세 또는 금융상품 수익 계산이 필요한지 여부",
+    )
+
+    reason: str = Field(
+        default="",
+        description="질문 유형을 이렇게 판정한 이유",
+    )
+
+    extracted_facts: dict[str, Any] = Field(
+        default_factory=dict,
+        description="사용자 질문에서 추출한 사실 정보",
+    )
