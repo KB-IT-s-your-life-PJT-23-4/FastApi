@@ -32,3 +32,54 @@ FAMILY_FACT_KEYS = {
     "previous_gift_same_donor",
     "previously_used_deduction",
 }
+
+FACT_KEY_ALIASES = {
+    # 현재 증여금액
+    "증여 금액": "gift_amount",
+    "증여금액": "gift_amount",
+    "현재 증여 금액": "gift_amount",
+    "현재 증여금액": "gift_amount",
+
+    # 증여 관계
+    "증여자와 수증자의 관계": (
+        "relationship_type"
+    ),
+    "증여 관계": "relationship_type",
+    "관계": "relationship_type",
+
+    # 나이·미성년 여부
+    "자녀의 나이": "recipient_age",
+    "수증자의 나이": "recipient_age",
+    "나이": "recipient_age",
+    "수증자의 미성년 여부": (
+        "recipient_is_minor"
+    ),
+    "미성년 여부": "recipient_is_minor",
+
+    # 현재 증여일
+    "증여 날짜": "gift_date",
+    "증여 예정일": "gift_date",
+    "증여일": "gift_date",
+
+    # 과거 증여
+    "이전 증여 여부": "has_previous_gifts",
+    "이전의 증여 여부": "has_previous_gifts",
+    "previous_gifts": "has_previous_gifts",
+
+    "이전 증여 금액": (
+        "previous_gift_amount"
+    ),
+    "과거 증여 금액": (
+        "previous_gift_amount"
+    ),
+    "gift_amounts": (
+        "previous_gift_amount"
+    ),
+
+    "이전 증여일": "previous_gift_date",
+    "과거 증여일": "previous_gift_date",
+
+    "동일 증여자 여부": (
+        "previous_gift_same_donor"
+    ),
+}
