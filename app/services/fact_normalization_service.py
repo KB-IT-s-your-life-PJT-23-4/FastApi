@@ -1,5 +1,17 @@
 from typing import Any
 
+UNKNOWN_VALUES = {
+    "",
+    "모름",
+    "알 수 없음",
+    "확인 안 됨",
+    "미확인",
+    "unknown",
+    "none",
+    "null",
+    "undefined",
+}
+
 def normalize_calculation_facts(
         facts: dict[str, Any],
         question: str = "",
@@ -367,3 +379,58 @@ def means_has_previous_gifts(
         "true",
         "1",
     }
+
+def validate_estimate_facts(
+    facts: dict[str, Any],
+) -> list[str]:
+    missing: list[str] = []
+
+    required_keys = [
+        "gift_amount",
+        "relationship_type",
+        "has_previous_gifts",
+    ]
+
+    for key in required_keys:
+        if is_unknown_value(
+            facts.get(key)
+        ):
+            missing.append(key)
+
+    has_previous = facts.get(
+        "has_previous_gifts"
+    )
+
+    if means_has_previous_gifts(
+        has_previous
+    ):
+        for key in [
+            "previous_gift_amount",
+            "previous_gift_date",
+            "previous_gift_same_donor",
+        ]:
+            if is_unknown_value(
+                facts.get(key)
+            ):
+                missing.append(key)
+
+    return missing
+
+def is_unknown_value(
+    value: Any,
+) -> bool:
+    """
+    입력값이 비어 있거나 확인되지 않은 값인지 판정한다.
+
+    주의:
+    - 0은 정상적인 값이므로 unknown으로 판단하지 않는다.
+    - False도 정상적인 값이므로 unknown으로 판단하지 않는다.
+    """
+    if value is None:
+        return True
+
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        return normalized in UNKNOWN_VALUES
+
+    return False

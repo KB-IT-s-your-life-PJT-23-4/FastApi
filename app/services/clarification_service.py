@@ -1,3 +1,11 @@
+from app.schemas.chat import ClarificationResult
+from app.prompts.clarification import (
+    CLARIFICATION_SYSTEM_PROMPT,
+    CLARIFICATION_SCHEMA,
+    build_clarification_prompt,
+    )
+from typing import Any
+
 class ClarificationService:
     def __init__(
         self,
@@ -19,7 +27,7 @@ class ClarificationService:
         if intent != "assessment":
             return ClarificationResult(
                 needs_clarification=False,
-                question=[],
+                questions=[],
                 known_facts=[],
                 reason="추가 확인 대상이 아닙니다."
             )
@@ -27,13 +35,13 @@ class ClarificationService:
         prompt = build_clarification_prompt(
                 question=question,
                 context=context,
-                additional_facts=additional_facts,
+                additional_facts=facts,
                 intent=intent,
                 requires_calculation=requires_calculation,
             )
         
-        response = chat_client.responses.create(
-            model=OPENAI_CHAT_MODEL,
+        response = self.client.responses.create(
+            model=self.model,
             instructions=CLARIFICATION_SYSTEM_PROMPT,
             input=prompt,
             text={

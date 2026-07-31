@@ -78,3 +78,13 @@ class QuestionIntentResult(BaseModel):
         default_factory=dict,
         description="사용자 질문에서 추출한 사실 정보",
     )
+
+class KnownFact(BaseModel):
+    key: str
+    value: str
+
+class ClarificationResult(BaseModel):
+    needs_clarification: bool
+    questions: list[ClarificationQuestion]
+    known_facts: list[KnownFact]
+    reason: str
