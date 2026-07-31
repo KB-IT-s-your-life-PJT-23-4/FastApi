@@ -33,22 +33,19 @@ def create_error_response(
 ) -> JSONResponse:
     return JSONResponse(
         status_code=status_code,
-        content=(
-            status_code=status_code,
-            content=(
-                "success":False,
-                "status_code": status_code,
-                "timestamp": datetime.now(
-                    timezone.utc
-                ).isformat(),
-                "path": request.url.path,
-                "error": {
-                    "code":code,
-                    "message": message,
-                    "details": details
-                }
-            )
-        )
+        content={
+            "success":False,
+            "status_code": status_code,
+            "timestamp": datetime.now(
+                timezone.utc
+            ).isformat(),
+            "path": request.url.path,
+            "error": {
+                "code":code,
+                "message": message,
+                "details": details
+            },
+        }
     )
 
 
