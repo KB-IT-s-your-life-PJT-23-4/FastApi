@@ -261,3 +261,109 @@ def normalize_boolean_value(
         return False
 
     return None
+
+def parse_age(
+    value: Any,
+) -> int | None:
+    if value is None:
+        return None
+
+    if isinstance(value, int):
+        return value
+
+    match = re.search(
+        r"\d+",
+        str(value),
+    )
+
+    if not match:
+        return None
+
+    return int(match.group())
+
+def normalize_relationship_type(
+    value: Any,
+    recipient_is_minor: bool | None = None,
+) -> str | None:
+    text = str(value).strip()
+
+    if text in {
+        "자녀",
+        "성년 자녀",
+        "직계비속",
+    }:
+        if recipient_is_minor:
+            return "parent_to_minor_child"
+
+        return "parent_to_adult_child"
+
+    if text in {
+        "미성년 자녀",
+    }:
+        return "parent_to_minor_child"
+
+    if text in {
+        "배우자",
+        "남편",
+        "아내",
+    }:
+        return "spouse"
+
+    if text in {
+        "부모",
+        "직계존속",
+    }:
+        return "child_to_parent"
+
+    if text in {
+        "기타 친족",
+        "형제",
+        "자매",
+    }:
+        return "other_relative"
+
+    return None
+
+def means_no_previous_gifts(
+    value: Any,
+) -> bool:
+    if value is False:
+        return True
+
+    if value is True:
+        return False
+
+    normalized = str(value).strip().lower()
+
+    return normalized in {
+        "없음",
+        "없습니다",
+        "없다",
+        "아니오",
+        "아니요",
+        "no",
+        "false",
+        "0",
+    }
+
+def means_has_previous_gifts(
+    value: Any,
+) -> bool:
+    if value is True:
+        return True
+
+    if value is False:
+        return False
+
+    normalized = str(value).strip().lower()
+
+    return normalized in {
+        "있음",
+        "있습니다",
+        "있다",
+        "예",
+        "네",
+        "yes",
+        "true",
+        "1",
+    }
