@@ -33,23 +33,22 @@ def ask_question(
         request
     )
 
-# continue_after_clarification 개발 필요
-# @router.post(
-#     "/clarification",
-#     response_model=ChatResponse,
-#     status_code=status.HTTP_200_OK,
-#     summary="추가 질문 답변 제출",
-#     description=(
-#         "AI가 요청한 추가 확인 질문에 대한 답변을 받아 "
-#         "상담을 이어서 처리합니다."
-#     )
-# )
-# def submit_clarification(
-#     request: ClarificationRequest,
-#     chat_service: ChatService = Depends(
-#         get_chat_service
-#     )
-# ) -> ChatResponse:
-#     return chat_service.continue_after_clarification(
-#         request
-#     )
+@router.post(
+    "/clarification",
+    response_model=ChatResponse,
+    status_code=status.HTTP_200_OK,
+    summary="추가 질문 답변 제출",
+    description=(
+        "AI가 요청한 추가 확인 질문에 대한 답변을 받아 "
+        "상담을 이어서 처리합니다."
+    )
+)
+def submit_clarification(
+    request: ClarificationRequest,
+    chat_service: ChatService = Depends(
+        get_chat_service
+    )
+) -> ChatResponse:
+    return chat_service.continue_after_clarification(
+        request
+    )

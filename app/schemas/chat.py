@@ -44,6 +44,7 @@ class ClarificationRequest(BaseModel):
     conversation_id: str
     question: str
     intent: str
+    requires_calculation: bool = False
     facts: dict[str, Any]
     answers: dict[str, Any]
     family: FamilyData | None = None
