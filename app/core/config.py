@@ -23,6 +23,7 @@ class Settings(BaseSettings):
 
     interpretation_top_k: int = Field(default=4, ge=1, le=20)
     law_top_k: int = Field(default=2, ge=1, le=20)
+    law_chunk_top_k: int = Field(default=10, ge=1, le=100)
 
     model_config = SettingsConfigDict(
         env_file=".env",

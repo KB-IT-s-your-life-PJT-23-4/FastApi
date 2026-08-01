@@ -8,6 +8,7 @@ import os
 import re
 import time
 from dataclasses import dataclass
+from datetime import date, datetime
 from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlparse
@@ -41,6 +42,11 @@ CHROMA_PATH = os.getenv("CHROMA_PATH", "storage/chroma")
 CHROMA_COLLECTION_NAME = os.getenv(
     "INTERPRETATION_COLLECTION_NAME",
     "gift_tax_documents",
+)
+
+INTERPRETATION_START_DATE = os.getenv(
+    "INTERPRETATION_START_DATE",
+    "2014-01-01",
 )
 
 LAW_LIST_URL = "https://www.law.go.kr/DRF/lawSearch.do"
@@ -541,13 +547,95 @@ def split_question_reply(
     result["other"] = content
     return result
 
-def format_yyyymmdd(value: Any) -> str:
-    text = str(value or "").strip()
+def parse_interpretation_date(
+    value: Any,
+) -> date | None:
+    text = re.sub(
+        r"[^0-9]",
+        "",
+        str(value or "").strip(),
+    )
 
     if len(text) != 8 or not text.isdigit():
-        return text
+        return None
 
-    return f"{text[:4]}-{text[4:6]}-{text[6:8]}"
+    try:
+        return datetime.strptime(
+            text,
+            "%Y%m%d",
+        ).date()
+    except ValueError:
+        return None
+
+
+def format_yyyymmdd(value: Any) -> str:
+    parsed = parse_interpretation_date(value)
+    if parsed is None:
+        return str(value or "").strip()
+
+    return parsed.isoformat()
+
+
+def is_interpretation_on_or_after(
+    value: Any,
+    start_date: str = INTERPRETATION_START_DATE,
+) -> bool:
+    parsed = parse_interpretation_date(value)
+    cutoff = parse_interpretation_date(start_date)
+
+    if cutoff is None:
+        raise ValueError(
+            "법령해석 수집 시작일 형식이 올바르지 않습니다."
+        )
+
+    return parsed is not None and parsed >= cutoff
+
+
+def find_interpretation_chunk_ids_before(
+    target_collection: chromadb.Collection,
+    start_date: str = INTERPRETATION_START_DATE,
+) -> list[str]:
+    cutoff = parse_interpretation_date(start_date)
+    if cutoff is None:
+        raise ValueError(
+            "법령해석 삭제 기준일 형식이 올바르지 않습니다."
+        )
+
+    result = target_collection.get(
+        include=["metadatas"],
+    )
+    ids_to_delete: list[str] = []
+
+    for chunk_id, metadata in zip(
+        result["ids"],
+        result["metadatas"],
+    ):
+        interpretation_date = parse_interpretation_date(
+            (metadata or {}).get("interpretation_date")
+        )
+        if (
+            interpretation_date is not None
+            and interpretation_date < cutoff
+        ):
+            ids_to_delete.append(chunk_id)
+
+    return ids_to_delete
+
+
+def delete_interpretation_chunks_before(
+    target_collection: chromadb.Collection,
+    start_date: str = INTERPRETATION_START_DATE,
+    batch_size: int = 500,
+) -> int:
+    ids_to_delete = find_interpretation_chunk_ids_before(
+        target_collection,
+        start_date=start_date,
+    )
+
+    for id_batch in batched(ids_to_delete, batch_size):
+        target_collection.delete(ids=list(id_batch))
+
+    return len(ids_to_delete)
 
 def normalize_interpretation(
     list_item: InterpretationListItem,
@@ -618,7 +706,9 @@ def normalize_interpretation(
             )
         ),
         "interpretation_date": (
-            list_item.interpretation_date
+            format_yyyymmdd(
+                list_item.interpretation_date
+            )
             or format_yyyymmdd(
                 document.get("ntstDcmRgtDt")
             )
@@ -902,6 +992,7 @@ def collect_and_store(
     start_page: int = 1,
     end_page: int = 20,
     target_collection: chromadb.Collection | None = None,
+    start_date: str = INTERPRETATION_START_DATE,
 ) -> None:
     session = create_http_session()
 
@@ -913,15 +1004,38 @@ def collect_and_store(
         display=10,
     )
 
+    filtered_items: list[InterpretationListItem] = []
+    excluded_count = 0
+
+    for item in list_items:
+        parsed_date = parse_interpretation_date(
+            item.interpretation_date
+        )
+        if (
+            parsed_date is not None
+            and not is_interpretation_on_or_after(
+                item.interpretation_date,
+                start_date=start_date,
+            )
+        ):
+            excluded_count += 1
+            continue
+        filtered_items.append(item)
+
+    logging.info(
+        "수집 시작일 이전 목록 제외: %s건 (기준일=%s)",
+        excluded_count,
+        start_date,
+    )
     logging.info(
         "상세조회 대상: %s건",
-        len(list_items),
+        len(filtered_items),
     )
 
     success_count = 0
     failure_count = 0
 
-    for index, item in enumerate(list_items, start=1):
+    for index, item in enumerate(filtered_items, start=1):
         try:
             raw_response = fetch_interpretation_detail(
                 session,
@@ -932,6 +1046,18 @@ def collect_and_store(
                 item,
                 raw_response,
             )
+
+            if not is_interpretation_on_or_after(
+                document.get("interpretation_date"),
+                start_date=start_date,
+            ):
+                logging.warning(
+                    "수집 시작일 이전 또는 날짜 누락 문서 제외: "
+                    "%s / %s",
+                    item.document_id,
+                    document.get("interpretation_date", ""),
+                )
+                continue
 
             save_raw_document(
                 item.document_id,
@@ -958,7 +1084,7 @@ def collect_and_store(
             logging.info(
                 "[%s/%s] 저장 완료: %s / 청크 %s개",
                 index,
-                len(list_items),
+                len(filtered_items),
                 item.title,
                 len(chunks),
             )
@@ -969,7 +1095,7 @@ def collect_and_store(
             logging.exception(
                 "[%s/%s] 처리 실패: %s",
                 index,
-                len(list_items),
+                len(filtered_items),
                 item.document_id,
             )
 

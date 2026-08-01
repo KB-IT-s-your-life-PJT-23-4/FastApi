@@ -5,6 +5,7 @@ import os
 import chromadb
 
 from app.collectors.nts_interpretation_collector import (
+    INTERPRETATION_START_DATE,
     chroma_client,
     collect_and_store,
 )
@@ -40,6 +41,7 @@ def collect_and_store_interpretations_cosine(
     collection_name: str = (
         INTERPRETATION_COSINE_COLLECTION_NAME
     ),
+    start_date: str = INTERPRETATION_START_DATE,
 ) -> None:
     cosine_collection = (
         get_cosine_interpretation_collection(
@@ -51,6 +53,7 @@ def collect_and_store_interpretations_cosine(
         start_page=start_page,
         end_page=end_page,
         target_collection=cosine_collection,
+        start_date=start_date,
     )
 
 
@@ -59,4 +62,5 @@ if __name__ == "__main__":
         query="증여",
         start_page=1,
         end_page=20,
+        start_date=INTERPRETATION_START_DATE,
     )

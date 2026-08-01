@@ -74,6 +74,7 @@ def get_chat_service() -> ChatService:
             law_repository=get_law_repository(),
             interpretation_top_k=settings.interpretation_top_k,
             law_top_k=settings.law_top_k,
+            law_chunk_top_k=settings.law_chunk_top_k,
         ),
         clarification_service=ClarificationService(
             client=client,
