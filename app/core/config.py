@@ -18,11 +18,11 @@ class Settings(BaseSettings):
     openai_embedding_model: str = "text-embedding-3-small"
 
     chroma_path: str = str(BASE_DIR / "storage" / "chroma")
-    law_collection_name: str = "gift_tax_laws"
-    interpretation_collection_name: str = "nts_interpretations"
+    law_collection_name: str = "gift_tax_law_articles"
+    interpretation_collection_name: str = "gift_tax_documents"
 
     interpretation_top_k: int = Field(default=4, ge=1, le=20)
-    law_top_k = Field(default=2, ge=1, le=20)
+    law_top_k: int = Field(default=2, ge=1, le=20)
 
     model_config = SettingsConfigDict(
         env_file=".env",

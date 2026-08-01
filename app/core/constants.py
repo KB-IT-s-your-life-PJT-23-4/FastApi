@@ -8,7 +8,7 @@ RAG_INTENTS = {
     "family",           #등록된 가족에 대한 증여세 계산
     "assessment",       #과세 여부 판단 및 간이 세액 계산
     "procedure",        #신고, 납부 절차
-    "product"           #등록된 상품에 대한 설명
+    "product",          #등록된 상품에 대한 설명
     "other_gift",       #위 유형에 포함되지 않는 증여세 관련 질문
 }
 

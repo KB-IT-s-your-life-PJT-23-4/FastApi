@@ -7,30 +7,34 @@ class RetrievalService:
         self,
         interpretation_repository: InterpretationRepository,
         law_repository: LawRepository,
+        interpretation_top_k: int = 4,
+        law_top_k: int = 2,
     ) -> None:
         self.interpretation_repository = interpretation_repository
         self.law_repository = law_repository
+        self.interpretation_top_k = interpretation_top_k
+        self.law_top_k = law_top_k
 
     def retrieve(
         self,
         question: str,
-        interpretation_top_k: int = 4,
-        law_top_k: int = 2,
     ) -> str:
         interpretation_result = (
             self.interpretation_repository.search(
                 question=question,
-                top_k=interpretation_top_k,
+                top_k=self.interpretation_top_k,
             )
         )
 
         law_result = self.law_repository.search(
             question=question,
-            top_k=law_top_k
+            top_k=self.law_top_k
         )
 
         interpretation_contexts = (
-            format_interpretation_context
+            format_interpretation_context(
+                interpretation_result
+            )
         )
 
         law_contexts = format_law_context(law_result)

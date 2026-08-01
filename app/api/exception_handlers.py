@@ -38,7 +38,7 @@ def create_error_response(
             "status_code": status_code,
             "timestamp": datetime.now(
                 timezone.utc
-            ).isformat(),
+            ).isoformat(),
             "path": request.url.path,
             "error": {
                 "code":code,

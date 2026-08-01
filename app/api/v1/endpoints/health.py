@@ -8,5 +8,5 @@ router = APIRouter(
 @router.get("")
 def health_check() -> dict[str, str]:
     return {
-        "status: up",
+        "status": "UP",
     }

@@ -7,12 +7,15 @@ requires-python = ">=3.12"
 dependencies = [
     "beautifulsoup4>=4.15.0",
     "chromadb>=1.5.9",
-    "fastapi[standard]>=0.1.0",
+    "fastapi[standard]>=0.115.0",
+    "httpx>=0.28.1",
     "openai>=2.46.0",
+    "pydantic>=2.12.0",
     "pydantic-settings>=2.14.2",
     "pypdf>=6.14.2",
     "python-dotenv>=1.2.2",
     "requests>=2.34.2",
+    "urllib3>=2.6.0",
 ]
 
 [dependency-groups]
@@ -20,3 +23,6 @@ dev = [
     "pytest>=9.1.1",
     "ruff>=0.15.22",
 ]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

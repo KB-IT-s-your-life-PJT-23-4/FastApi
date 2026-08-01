@@ -7,17 +7,13 @@ import re
 from dotenv import load_dotenv
 from openai import OpenAI
 import json
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 
 from app.collectors.law_article_collector import (
     law_collection,
     search_gift_tax_law,
 )
 
-from app.data.gift_tax_rules import (
-    GIFT_DEDUCTION_TABLE,
-    GIFT_TAX_RATE_TABLE,
-)
 from app.collectors.nts_interpretation_collector import (
     collection as interpretation_collection,
     search_interpretations,

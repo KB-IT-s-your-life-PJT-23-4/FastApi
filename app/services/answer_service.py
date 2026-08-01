@@ -1,3 +1,5 @@
+from openai import OpenAI
+
 from app.prompts.answer import (
     FINAL_ANSWER_SYSTEM_PROMPT,
     build_final_answer_prompt
