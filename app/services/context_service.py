@@ -97,7 +97,7 @@ class ContextService:
         if not products:
             return ""
 
-        contexts = list[str] = []
+        contexts: list[str] = []
 
         for index, product in enumerate(
             products,
