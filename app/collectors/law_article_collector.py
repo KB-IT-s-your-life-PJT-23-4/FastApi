@@ -43,7 +43,7 @@ CHROMA_PATH = os.getenv(
 )
 
 LAW_CHROMA_COLLECTION_NAME = os.getenv(
-    "LAW_CHROMA_COLLECTION_NAME",
+    "LAW_COLLECTION_NAME",
     "gift_tax_law_articles",
 )
 

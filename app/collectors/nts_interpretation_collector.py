@@ -39,8 +39,8 @@ OPENAI_EMBEDDING_MODEL = os.getenv(
 )
 CHROMA_PATH = os.getenv("CHROMA_PATH", "storage/chroma")
 CHROMA_COLLECTION_NAME = os.getenv(
-    "CHROMA_COLLECTION_NAME",
-    "gift_tax_interpretations",
+    "INTERPRETATION_COLLECTION_NAME",
+    "gift_tax_documents",
 )
 
 LAW_LIST_URL = "https://www.law.go.kr/DRF/lawSearch.do"
