@@ -1,11 +1,11 @@
+from openai import OpenAI
+
 from app.schemas.chat import ClarificationResult
 from app.prompts.clarification import (
     CLARIFICATION_SYSTEM_PROMPT,
     CLARIFICATION_SCHEMA,
     build_clarification_prompt,
     )
-from typing import Any
-
 class ClarificationService:
     def __init__(
         self,
