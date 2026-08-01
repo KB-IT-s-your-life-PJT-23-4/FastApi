@@ -22,7 +22,7 @@ class Settings(BaseSettings):
     interpretation_collection_name: str = "nts_interpretations"
 
     interpretation_top_k: int = Field(default=4, ge=1, le=20)
-    law_top_k = Field(default=2, ge=1, le=20)
+    law_top_k: int = Field(default=2, ge=1, le=20)
 
     model_config = SettingsConfigDict(
         env_file=".env",
