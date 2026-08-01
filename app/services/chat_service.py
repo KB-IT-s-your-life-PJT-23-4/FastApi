@@ -1,4 +1,4 @@
-from uuid import uuid64
+from uuid import uuid4
 
 from app.core.constants import (
     BLOCKED_INTENTS,
@@ -37,7 +37,7 @@ class ChatService:
     ) -> ChatResponse:
         conversation_id = (
             request.conversation_id
-            or str(uuid64())
+            or str(uuid4())
         )
 
         question = request.question.strip()
