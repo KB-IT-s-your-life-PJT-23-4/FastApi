@@ -15,6 +15,9 @@ from app.services.clarification_service import ClarificationService
 from app.services.context_service import ContextService
 from app.services.intent_service import IntentService
 from app.services.retrieval_service import RetrievalService
+from app.services.fact_normalization_service import (
+    normalize_calculation_facts,
+)
 
 class ChatService:
     def __init__(
@@ -84,8 +87,14 @@ class ChatService:
 
         facts = {
             **DEFAULT_FACTS,
+            **intent_result.extracted_facts,
             **request.facts
         }
+        if intent in {"family", "assessment"}:
+            facts = normalize_calculation_facts(
+                facts,
+                question=question,
+            )
         
         family_context = ""
         product_context = ""
@@ -201,6 +210,11 @@ class ChatService:
             **request.answers,
         }
         intent = request.intent
+        if intent in {"family", "assessment"}:
+            facts = normalize_calculation_facts(
+                facts,
+                question=request.question,
+            )
         family_context = ""
         product_context = ""
         rag_context = ""

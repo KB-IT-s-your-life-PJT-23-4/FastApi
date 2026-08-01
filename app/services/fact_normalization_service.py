@@ -23,16 +23,21 @@ def normalize_calculation_facts(
         )
     
     # 증여금액 변환: "6000만원" → 60000000
-    normalized["gift_amount"] = (
-        parse_korean_amount(
-            normalized.get("gift_amount")
-        )
+    gift_amount = parse_korean_amount(
+        normalized.get("gift_amount")
     )
+    if gift_amount is None:
+        gift_amount = extract_korean_amount_from_text(
+            question
+        )
+    normalized["gift_amount"] = gift_amount
 
     # 수증자 나이
     recipient_age = parse_age(
         normalized.get("recipient_age")
     )
+    if recipient_age is None:
+        recipient_age = extract_age_from_text(question)
 
     # 미성년 여부
     recipient_is_minor = (
@@ -43,12 +48,8 @@ def normalize_calculation_facts(
         )
     )
 
-    # 나이는 있지만 미성년 여부가 없다면
-    # 간이 계산 기준으로 판단
-    if (
-        recipient_is_minor is None
-        and recipient_age is not None
-    ):
+    # 숫자로 확인된 나이가 있으면 확인형 답변보다 우선한다.
+    if recipient_age is not None:
         recipient_is_minor = (
             recipient_age < 19
         )
@@ -66,10 +67,17 @@ def normalize_calculation_facts(
         "relationship_type"
     )
 
-    relationship_type = normalize_relationship_type(
-        raw_relationship,
+    relationship_type = infer_relationship_from_question(
+        question,
+        raw_relationship=raw_relationship,
         recipient_is_minor=recipient_is_minor,
     )
+
+    if relationship_type is None:
+        relationship_type = normalize_relationship_type(
+            raw_relationship,
+            recipient_is_minor=recipient_is_minor,
+        )
 
     # 모델이 relationship_type에 "맞음", "아님"처럼
     # 잘못된 값을 넣은 경우 사용자 질문에서 관계를 다시 찾음
@@ -240,6 +248,25 @@ def parse_korean_amount(
         number * multiplier
     )
 
+
+def extract_korean_amount_from_text(
+    text: str,
+) -> int | None:
+    normalized = str(text or "").replace(
+        ",",
+        "",
+    ).replace(
+        " ",
+        "",
+    )
+    match = re.search(
+        r"\d+(?:\.\d+)?(?:억원|억|천만원|만원|원)",
+        normalized,
+    )
+    if not match:
+        return None
+    return parse_korean_amount(match.group())
+
 def normalize_boolean_value(
     value: Any,
 ) -> bool | None:
@@ -294,6 +321,101 @@ def parse_age(
         return None
 
     return int(match.group())
+
+
+def extract_age_from_text(text: str) -> int | None:
+    match = re.search(
+        r"(?<!\d)(\d{1,3})\s*세(?!\d)",
+        str(text or ""),
+    )
+    if not match:
+        return None
+    age = int(match.group(1))
+    if 0 <= age <= 150:
+        return age
+    return None
+
+
+def extract_calculation_facts_from_question(
+    question: str,
+) -> dict[str, Any]:
+    facts: dict[str, Any] = {}
+    gift_amount = extract_korean_amount_from_text(question)
+    recipient_age = extract_age_from_text(question)
+
+    if gift_amount is not None:
+        facts["gift_amount"] = gift_amount
+
+    if recipient_age is not None:
+        facts["recipient_age"] = recipient_age
+        facts["recipient_is_minor"] = recipient_age < 19
+    elif "미성년" in question:
+        facts["recipient_is_minor"] = True
+    elif "성년" in question or "성인" in question:
+        facts["recipient_is_minor"] = False
+
+    relationship_type = infer_relationship_from_question(
+        question,
+        recipient_is_minor=facts.get("recipient_is_minor"),
+    )
+    if relationship_type is not None:
+        facts["relationship_type"] = relationship_type
+
+    return facts
+
+
+def infer_relationship_from_question(
+    question: str,
+    *,
+    raw_relationship: Any = None,
+    recipient_is_minor: bool | None = None,
+) -> str | None:
+    text = str(question or "").replace(" ", "")
+    raw_text = str(raw_relationship or "").strip()
+    child_words = ("자녀", "아들", "딸")
+    parent_words = ("부모", "아버지", "어머니")
+
+    has_child = any(word in text for word in child_words)
+    has_parent = any(word in text for word in parent_words)
+
+    parent_is_donor = any(
+        pattern in text
+        for pattern in (
+            "부모가자녀에게",
+            "부모가아들에게",
+            "부모가딸에게",
+            "아버지가자녀에게",
+            "어머니가자녀에게",
+        )
+    )
+    child_is_donor = any(
+        pattern in text
+        for pattern in (
+            "자녀가부모에게",
+            "아들이부모에게",
+            "딸이부모에게",
+        )
+    )
+
+    if parent_is_donor or (
+        has_child
+        and raw_text in parent_words
+        and not child_is_donor
+    ):
+        return (
+            "parent_to_minor_child"
+            if recipient_is_minor
+            else "parent_to_adult_child"
+        )
+
+    if child_is_donor or (
+        has_parent
+        and raw_text in child_words
+        and not parent_is_donor
+    ):
+        return "child_to_parent"
+
+    return None
 
 def normalize_relationship_type(
     value: Any,
