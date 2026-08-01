@@ -30,7 +30,9 @@ class RetrievalService:
         )
 
         interpretation_contexts = (
-            format_interpretation_context
+            format_interpretation_context(
+                interpretation_result
+            )
         )
 
         law_contexts = format_law_context(law_result)
