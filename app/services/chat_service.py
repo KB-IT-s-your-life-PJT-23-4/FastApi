@@ -160,10 +160,11 @@ class ChatService:
                 facts=facts
             )
 
-        final_context = (
+        final_context, facts = (
             self.context_service.build_final_context(
                 base_context=base_context,
                 facts=facts,
+                question=question,
                 intent=intent,
                 requires_calculation=(
                     intent_result.requires_calculation
