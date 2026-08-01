@@ -10,11 +10,16 @@ from app.collectors.nts_interpretation_collector import (
     parse_interpretation_date,
 )
 from app.core.constants import RAG_INTENTS
+from app.data.gift_tax_rules import (
+    GIFT_DEDUCTION_TABLE,
+    GIFT_TAX_RATE_TABLE,
+)
 from app.main import app
 from app.prompts.answer import (
     FINAL_ANSWER_SYSTEM_PROMPT,
     build_final_answer_prompt,
 )
+from app.prompts.context import build_gift_tax_rule_context
 from app.repositories.interpretation_repository import (
     InterpretationRepository,
 )
@@ -88,6 +93,28 @@ def test_question_facts_override_confirmation_answers() -> None:
     assert facts["relationship_type"] == (
         "parent_to_adult_child"
     )
+
+
+def test_adult_child_deduction_is_explicit_in_context() -> None:
+    context = build_gift_tax_rule_context(
+        rate_table=GIFT_TAX_RATE_TABLE,
+        deduction_table=GIFT_DEDUCTION_TABLE,
+        relationship_type="parent_to_adult_child",
+    )
+
+    assert "공제 한도: 50,000,000원 (5,000만원)" in context
+    assert "5,000,000원(500만원)이 아닙니다" in context
+
+
+def test_minor_child_deduction_is_explicit_in_context() -> None:
+    context = build_gift_tax_rule_context(
+        rate_table=GIFT_TAX_RATE_TABLE,
+        deduction_table=GIFT_DEDUCTION_TABLE,
+        relationship_type="parent_to_minor_child",
+    )
+
+    assert "공제 한도: 20,000,000원 (2,000만원)" in context
+    assert "2,000,000원(200만원)이 아닙니다" in context
 
 
 def test_all_gift_intents_use_rag() -> None:
