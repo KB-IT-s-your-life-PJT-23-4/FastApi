@@ -89,7 +89,22 @@ def build_gift_tax_rule_context(
     *,
     rate_table: list[dict[str, Any]],
     deduction_table: dict[str, int],
+    relationship_type: str | None = None,
 ) -> str:
+    selected_deduction = deduction_table.get(
+        relationship_type or ""
+    )
+    selected_deduction_context = ""
+
+    if selected_deduction is not None:
+        selected_deduction_context = f"""
+
+[이번 계산에 적용할 증여재산공제]
+- 적용 관계 코드: {relationship_type}
+- 공제 한도: {selected_deduction:,}원 ({selected_deduction // 10_000:,}만원)
+- 위 공제 한도를 그대로 사용하고 숫자를 줄이거나 다른 단위로 바꾸지 마세요.
+""".rstrip()
+
     return f"""
 [서버 제공 증여세 간이 계산 기준]
 
@@ -111,11 +126,12 @@ def build_gift_tax_rule_context(
 
 관계 코드:
 - spouse: 배우자
-- parent_to_adult_child: 부모가 성년 자녀에게 증여
-- parent_to_minor_child: 부모가 미성년 자녀에게 증여
+- parent_to_adult_child: 부모가 성년 자녀에게 증여, 공제 한도 50,000,000원 (5,000만원)
+- parent_to_minor_child: 부모가 미성년 자녀에게 증여, 공제 한도 20,000,000원 (2,000만원)
 - child_to_parent: 자녀가 부모에게 증여
 - other_relative: 기타 친족
 - other: 공제 대상이 아닌 기타 관계
+{selected_deduction_context}
 
 세율표 사용 방법:
 1. 현재 증여금액과 합산 대상 과거 증여금액을 더하세요.
@@ -132,6 +148,9 @@ def build_gift_tax_rule_context(
 중요:
 - 서버가 제공한 세율과 공제액만 사용하세요.
 - 다른 세율이나 공제액을 임의로 적용하지 마세요.
+- 성년 자녀 공제는 50,000,000원(5,000만원)이며 5,000,000원(500만원)이 아닙니다.
+- 미성년 자녀 공제는 20,000,000원(2,000만원)이며 2,000,000원(200만원)이 아닙니다.
+- 공제액은 원 단위 정수와 괄호 안의 만원 단위가 일치하는지 확인하세요.
 - 계산 과정을 단계별로 표시하세요.
 - 결과는 확정세액이 아니라 간이 추정액으로 표현하세요.
 """.strip()

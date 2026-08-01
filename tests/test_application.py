@@ -10,11 +10,24 @@ from app.collectors.nts_interpretation_collector import (
     parse_interpretation_date,
 )
 from app.core.constants import RAG_INTENTS
+from app.data.gift_tax_rules import (
+    GIFT_DEDUCTION_TABLE,
+    GIFT_TAX_RATE_TABLE,
+)
 from app.main import app
+from app.prompts.answer import (
+    FINAL_ANSWER_SYSTEM_PROMPT,
+    build_final_answer_prompt,
+)
+from app.prompts.context import build_gift_tax_rule_context
 from app.repositories.interpretation_repository import (
     InterpretationRepository,
 )
 from app.services.context_service import ContextService
+from app.services.fact_normalization_service import (
+    extract_calculation_facts_from_question,
+    normalize_calculation_facts,
+)
 from app.services.retrieval_service import (
     RetrievalService,
     group_law_results_by_article,
@@ -33,6 +46,75 @@ def test_chat_routes_are_registered() -> None:
 
     assert "/api/v1/chat" in paths
     assert "/api/v1/chat/clarification" in paths
+
+
+def test_answer_prompt_uses_conversational_style() -> None:
+    prompt = build_final_answer_prompt(
+        question="증여세가 무엇인가요?",
+        context="상속세 및 증여세법 제2조",
+        additional_facts={},
+        intent="concept",
+    )
+
+    assert "첫 문장에서 사용자의 질문에 바로 답하세요" in (
+        FINAL_ANSWER_SYSTEM_PROMPT
+    )
+    assert "자연스럽고 친절한 존댓말" in (
+        FINAL_ANSWER_SYSTEM_PROMPT
+    )
+    assert "문서 전문, 청크 ID, 검색 거리" in prompt
+    assert "필요한 경우에만 짧은 예시" in prompt
+
+
+def test_question_facts_override_confirmation_answers() -> None:
+    question = (
+        "부모가 22세 성년 자녀에게 "
+        "6000만원을 증여하면 세금이 얼마인가요?"
+    )
+    extracted = extract_calculation_facts_from_question(
+        question
+    )
+    facts = normalize_calculation_facts(
+        {
+            "gift_amount": "맞음",
+            "relationship_type": "부모",
+            "recipient_age": "22세",
+            "recipient_is_minor": "맞음",
+            "has_previous_gifts": False,
+        },
+        question=question,
+    )
+
+    assert extracted["gift_amount"] == 60_000_000
+    assert extracted["recipient_is_minor"] is False
+    assert facts["gift_amount"] == 60_000_000
+    assert facts["recipient_age"] == 22
+    assert facts["recipient_is_minor"] is False
+    assert facts["relationship_type"] == (
+        "parent_to_adult_child"
+    )
+
+
+def test_adult_child_deduction_is_explicit_in_context() -> None:
+    context = build_gift_tax_rule_context(
+        rate_table=GIFT_TAX_RATE_TABLE,
+        deduction_table=GIFT_DEDUCTION_TABLE,
+        relationship_type="parent_to_adult_child",
+    )
+
+    assert "공제 한도: 50,000,000원 (5,000만원)" in context
+    assert "5,000,000원(500만원)이 아닙니다" in context
+
+
+def test_minor_child_deduction_is_explicit_in_context() -> None:
+    context = build_gift_tax_rule_context(
+        rate_table=GIFT_TAX_RATE_TABLE,
+        deduction_table=GIFT_DEDUCTION_TABLE,
+        relationship_type="parent_to_minor_child",
+    )
+
+    assert "공제 한도: 20,000,000원 (2,000만원)" in context
+    assert "2,000,000원(200만원)이 아닙니다" in context
 
 
 def test_all_gift_intents_use_rag() -> None:

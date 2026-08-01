@@ -43,6 +43,10 @@ from app.schemas.chat import (
     ClarificationResult,
     QuestionIntentResult,
 )
+from app.services.fact_normalization_service import (
+    extract_calculation_facts_from_question,
+    normalize_calculation_facts as normalize_shared_calculation_facts,
+)
 
 load_dotenv()
 
@@ -867,6 +871,13 @@ def classify_question_intent(
     result = QuestionIntentResult.model_validate_json(
         response.output_text
     )
+
+    if result.intent in {"family", "assessment"}:
+        result.extracted_facts = (
+            extract_calculation_facts_from_question(
+                question
+            )
+        )
 
     # 차단 질문은 계산하지 않도록 서버에서 강제
     if result.intent in BLOCKED_INTENTS:
@@ -1752,8 +1763,14 @@ def process_question(
     # 4. 기본 사실 구성
     additional_facts: dict[str, Any] = {
         **DEFAULT_FACTS,
+        **intent_result.extracted_facts,
         **(initial_facts or {}),
     }
+    if intent in {"family", "assessment"}:
+        additional_facts = normalize_shared_calculation_facts(
+            additional_facts,
+            question=question,
+        )
 
     family_context = ""
     product_context = ""
@@ -1831,7 +1848,7 @@ def process_question(
                 )
             )
 
-        additional_facts = normalize_calculation_facts(
+        additional_facts = normalize_shared_calculation_facts(
             additional_facts,
             question=question,
         )

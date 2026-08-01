@@ -6,6 +6,9 @@ from app.prompts.intent import(
     build_question_intent_prompt
 )
 from app.schemas.chat import QuestionIntentResult
+from app.services.fact_normalization_service import (
+    extract_calculation_facts_from_question,
+)
 
 class IntentService:
     def __init__(
@@ -39,6 +42,13 @@ class IntentService:
         if not response.output_text:
             raise RuntimeError("질문 유형 판정 결과가 비어 있습니다.")
 
-        return QuestionIntentResult.model_validate_json(
+        result = QuestionIntentResult.model_validate_json(
             response.output_text
         )
+        if result.intent in {"family", "assessment"}:
+            result.extracted_facts = (
+                extract_calculation_facts_from_question(
+                    question
+                )
+            )
+        return result

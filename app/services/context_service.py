@@ -230,6 +230,11 @@ class ContextService:
                         deduction_table=(
                             GIFT_DEDUCTION_TABLE
                         ),
+                        relationship_type=(
+                            normalized_facts.get(
+                                "relationship_type"
+                            )
+                        ),
                     )
                 )
 
