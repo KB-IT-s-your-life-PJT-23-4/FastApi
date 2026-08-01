@@ -77,7 +77,6 @@ class QuestionIntentResult(BaseModel):
     extracted_facts: dict[str, Any] = Field(
         default_factory=dict,
         description="사용자 질문에서 추출한 사실 정보",
-<<<<<<< HEAD
     )
 
 class KnownFact(BaseModel):
@@ -89,6 +88,3 @@ class ClarificationResult(BaseModel):
     questions: list[ClarificationQuestion]
     known_facts: list[KnownFact]
     reason: str
-=======
-    )
->>>>>>> aef42c0217b2aa57ac425db7cffce18a2f32bec3
