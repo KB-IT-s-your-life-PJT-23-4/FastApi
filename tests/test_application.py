@@ -2,13 +2,23 @@ from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
 
+from app.collectors import law_article_cosine_collector
+from app.collectors import nts_interpretation_cosine_collector
+from app.collectors.nts_interpretation_collector import (
+    find_interpretation_chunk_ids_before,
+    is_interpretation_on_or_after,
+    parse_interpretation_date,
+)
 from app.core.constants import RAG_INTENTS
 from app.main import app
 from app.repositories.interpretation_repository import (
     InterpretationRepository,
 )
 from app.services.context_service import ContextService
-from app.services.retrieval_service import RetrievalService
+from app.services.retrieval_service import (
+    RetrievalService,
+    group_law_results_by_article,
+)
 
 
 def test_health_endpoint() -> None:
@@ -108,3 +118,163 @@ def test_retrieval_formats_both_search_results() -> None:
     assert "법령해석 1" in context
     assert "관련 법령 원문" in context
     assert "법령 원문 1" in context
+
+
+def test_law_chunks_are_grouped_by_article() -> None:
+    search_result = {
+        "ids": [["article-2", "article-1", "other"]],
+        "documents": [[
+            "[내용]\n② 두 번째 항",
+            "[내용]\n① 첫 번째 항",
+            "[내용]\n다른 조문",
+        ]],
+        "metadatas": [[
+            {
+                "law_id": "law-1",
+                "article_key": "article-1",
+                "law_name": "테스트법",
+                "article_label": "제1조",
+                "section_index": 2,
+                "chunk_index": 0,
+                "paragraph_number": "②",
+            },
+            {
+                "law_id": "law-1",
+                "article_key": "article-1",
+                "law_name": "테스트법",
+                "article_label": "제1조",
+                "section_index": 1,
+                "chunk_index": 0,
+                "paragraph_number": "①",
+            },
+            {
+                "law_id": "law-1",
+                "article_key": "article-2",
+                "law_name": "테스트법",
+                "article_label": "제2조",
+                "section_index": 0,
+                "chunk_index": 0,
+                "paragraph_number": "",
+            },
+        ]],
+        "distances": [[0.2, 0.3, 0.4]],
+    }
+
+    grouped = group_law_results_by_article(
+        search_result,
+        max_articles=2,
+    )
+
+    assert len(grouped["documents"][0]) == 2
+    first_document = grouped["documents"][0][0]
+    assert first_document.index("① 첫 번째 항") < (
+        first_document.index("② 두 번째 항")
+    )
+    assert grouped["metadatas"][0][0][
+        "grouped_chunk_count"
+    ] == 2
+    assert grouped["distances"][0][0] == 0.2
+
+
+def test_cosine_collectors_create_hnsw_cosine_collections(
+    monkeypatch,
+) -> None:
+    calls: list[dict] = []
+    sentinel = object()
+
+    class FakeChromaClient:
+        def get_or_create_collection(self, **kwargs):
+            calls.append(kwargs)
+            return sentinel
+
+    fake_client = FakeChromaClient()
+    monkeypatch.setattr(
+        law_article_cosine_collector,
+        "chroma_client",
+        fake_client,
+    )
+    monkeypatch.setattr(
+        nts_interpretation_cosine_collector,
+        "chroma_client",
+        fake_client,
+    )
+
+    assert (
+        law_article_cosine_collector.get_cosine_law_collection(
+            "law-cosine-test"
+        )
+        is sentinel
+    )
+    assert (
+        nts_interpretation_cosine_collector.
+        get_cosine_interpretation_collection(
+            "interpretation-cosine-test"
+        )
+        is sentinel
+    )
+
+    assert [call["name"] for call in calls] == [
+        "law-cosine-test",
+        "interpretation-cosine-test",
+    ]
+    assert all(
+        call["configuration"]["hnsw"]["space"]
+        == "cosine"
+        for call in calls
+    )
+
+
+def test_interpretation_date_cutoff() -> None:
+    assert parse_interpretation_date("2014.01.01") is not None
+    assert is_interpretation_on_or_after("2014-01-01")
+    assert is_interpretation_on_or_after("20140102")
+    assert not is_interpretation_on_or_after("2013-12-31")
+    assert not is_interpretation_on_or_after("")
+
+
+def test_cosine_collector_forwards_start_date(monkeypatch) -> None:
+    target_collection = object()
+    received: dict = {}
+
+    monkeypatch.setattr(
+        nts_interpretation_cosine_collector,
+        "get_cosine_interpretation_collection",
+        lambda collection_name: target_collection,
+    )
+    monkeypatch.setattr(
+        nts_interpretation_cosine_collector,
+        "collect_and_store",
+        lambda **kwargs: received.update(kwargs),
+    )
+
+    collect_cosine = (
+        nts_interpretation_cosine_collector.
+        collect_and_store_interpretations_cosine
+    )
+    collect_cosine(
+        query="증여",
+        start_page=1,
+        end_page=2,
+        start_date="2014-01-01",
+    )
+
+    assert received["target_collection"] is target_collection
+    assert received["start_date"] == "2014-01-01"
+
+
+def test_old_interpretation_chunks_are_selected_for_deletion() -> None:
+    collection = SimpleNamespace(
+        get=lambda include: {
+            "ids": ["old", "cutoff", "new", "unknown"],
+            "metadatas": [
+                {"interpretation_date": "2013-12-31"},
+                {"interpretation_date": "2014-01-01"},
+                {"interpretation_date": "2020-05-01"},
+                {"interpretation_date": ""},
+            ],
+        }
+    )
+
+    ids = find_interpretation_chunk_ids_before(collection)
+
+    assert ids == ["old"]

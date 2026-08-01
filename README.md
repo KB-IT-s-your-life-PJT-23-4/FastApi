@@ -104,7 +104,9 @@ gift-tax-rag-server/
 │  │     └─ chat.py
 │  ├─ collectors/
 │  │  ├─ law_article_collector.py
-│  │  └─ nts_interpretation_collector.py
+│  │  ├─ law_article_cosine_collector.py
+│  │  ├─ nts_interpretation_collector.py
+│  │  └─ nts_interpretation_cosine_collector.py
 │  ├─ core/
 │  │  ├─ config.py
 │  │  ├─ constants.py
@@ -217,14 +219,23 @@ OPENAI_EMBEDDING_MODEL=text-embedding-3-small
 CHROMA_PATH=storage/chroma
 LAW_COLLECTION_NAME=gift_tax_law_articles
 INTERPRETATION_COLLECTION_NAME=gift_tax_documents
+LAW_COSINE_COLLECTION_NAME=gift_tax_law_articles_cosine
+INTERPRETATION_COSINE_COLLECTION_NAME=gift_tax_documents_cosine
+INTERPRETATION_START_DATE=2014-01-01
 
 INTERPRETATION_TOP_K=4
 LAW_TOP_K=2
+LAW_CHUNK_TOP_K=10
 
 LAW_API_OC=your-law-api-oc
 ```
 
 > `.env` 파일에는 API Key 등 민감한 정보가 포함되므로 Git에 커밋하지 않습니다.
+
+법령 검색은 `LAW_CHUNK_TOP_K`개의 후보 청크를 가져온 뒤
+`law_id + article_key` 기준으로 조문을 묶습니다. 같은 조문의 항과
+분할 청크는 법령 순서대로 합치고, 최종적으로 `LAW_TOP_K`개 조문을
+프롬프트에 적재합니다.
 
 ---
 
@@ -270,6 +281,35 @@ RAG 검색에 사용할 법령과 FAQ 데이터는 서버 요청 전에 미리 �
 ```bash
 uv run python -m app.collectors.law_article_collector
 uv run python -m app.collectors.nts_interpretation_collector
+```
+
+기본 L2 컬렉션과 별도로 Cosine HNSW 컬렉션을 구축하려면
+다음 Cosine 전용 collector 파일을 실행합니다.
+
+```powershell
+uv run python -m app.collectors.law_article_cosine_collector
+uv run python -m app.collectors.nts_interpretation_cosine_collector
+```
+
+기본 Cosine 컬렉션 이름은 각각
+`gift_tax_law_articles_cosine`, `gift_tax_documents_cosine`이며
+`.env`의 `LAW_COSINE_COLLECTION_NAME`,
+`INTERPRETATION_COSINE_COLLECTION_NAME`으로 변경할 수 있습니다.
+서버 검색도 Cosine 컬렉션으로 전환하려면 `LAW_COLLECTION_NAME`과
+`INTERPRETATION_COLLECTION_NAME`에 위 Cosine 컬렉션 이름을 지정합니다.
+
+국세청 법령해석 collector는 `INTERPRETATION_START_DATE` 이전 문서를
+목록 단계에서 제외하고, 상세 문서 날짜를 다시 검증한 뒤 저장합니다.
+기존 L2/Cosine 컬렉션의 오래된 청크는 먼저 dry-run으로 확인합니다.
+
+```powershell
+uv run python -m scripts.prune_old_interpretations
+```
+
+출력된 삭제 대상을 확인한 후 실제로 삭제합니다.
+
+```powershell
+uv run python -m scripts.prune_old_interpretations --apply
 ```
 
 수집된 원본 데이터는 다음 경로에 저장합니다.
@@ -510,6 +550,21 @@ uv run pytest -v
 
 ```bash
 uv run pytest --cov=app --cov-report=term-missing
+```
+
+Cosine 컬렉션을 대상으로 실제 임베딩 검색까지 검증하려면 다음과 같이
+통합 테스트를 명시적으로 활성화합니다.
+
+```powershell
+$env:RUN_COSINE_RAG_TEST="1"
+uv run pytest tests/test_gift_tax_rag_cosine.py -v -s
+```
+
+기존 `test_gift_tax_rag.py`의 대화형 상담 흐름을 Cosine 검색으로
+실행하려면 다음 명령을 사용합니다.
+
+```powershell
+uv run python -m tests.test_gift_tax_rag_cosine
 ```
 
 ## 14. 보안 주의사항

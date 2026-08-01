@@ -1,6 +1,8 @@
+from typing import Any
+
 from app.repositories.interpretation_repository import InterpretationRepository
 from app.repositories.law_repository import LawRepository
-from typing import Any
+
 
 class RetrievalService:
     def __init__(
@@ -9,11 +11,13 @@ class RetrievalService:
         law_repository: LawRepository,
         interpretation_top_k: int = 4,
         law_top_k: int = 2,
+        law_chunk_top_k: int = 10,
     ) -> None:
         self.interpretation_repository = interpretation_repository
         self.law_repository = law_repository
         self.interpretation_top_k = interpretation_top_k
         self.law_top_k = law_top_k
+        self.law_chunk_top_k = law_chunk_top_k
 
     def retrieve(
         self,
@@ -28,7 +32,11 @@ class RetrievalService:
 
         law_result = self.law_repository.search(
             question=question,
-            top_k=self.law_top_k
+            top_k=self.law_chunk_top_k,
+        )
+        grouped_law_result = group_law_results_by_article(
+            law_result,
+            max_articles=self.law_top_k,
         )
 
         interpretation_contexts = (
@@ -37,7 +45,7 @@ class RetrievalService:
             )
         )
 
-        law_contexts = format_law_context(law_result)
+        law_contexts = format_law_context(grouped_law_result)
 
         return "\n\n".join(
             [
@@ -115,6 +123,111 @@ def format_interpretation_context(
         contexts.append(context)
 
     return contexts
+
+
+def group_law_results_by_article(
+    search_result: dict[str, Any],
+    max_articles: int = 2,
+) -> dict[str, list[list[Any]]]:
+    """법령 청크를 조문 단위로 묶고 항·분할 순서대로 합친다."""
+    if max_articles <= 0:
+        raise ValueError("조문 검색 개수는 1 이상이어야 합니다.")
+
+    ids = get_first_result_list(search_result, "ids")
+    documents = get_first_result_list(search_result, "documents")
+    metadatas = get_first_result_list(search_result, "metadatas")
+    distances = get_first_result_list(search_result, "distances")
+
+    grouped: dict[tuple[str, str], list[tuple[Any, ...]]] = {}
+
+    for chunk_id, document, metadata, distance in zip(
+        ids,
+        documents,
+        metadatas,
+        distances,
+    ):
+        metadata = metadata or {}
+        key = (
+            str(metadata.get("law_id", "")),
+            str(metadata.get("article_key", chunk_id)),
+        )
+
+        if key not in grouped:
+            if len(grouped) >= max_articles:
+                continue
+            grouped[key] = []
+
+        grouped[key].append(
+            (chunk_id, document, metadata, distance)
+        )
+
+    grouped_ids: list[str] = []
+    grouped_documents: list[str] = []
+    grouped_metadatas: list[dict[str, Any]] = []
+    grouped_distances: list[float] = []
+
+    for (law_id, article_key), chunks in grouped.items():
+        chunks.sort(
+            key=lambda item: (
+                int(item[2].get("section_index", 0)),
+                int(item[2].get("chunk_index", 0)),
+            )
+        )
+        first_metadata = dict(chunks[0][2])
+        article_label = str(
+            first_metadata.get("article_label", "")
+        )
+        article_title = str(
+            first_metadata.get("article_title", "")
+        )
+        article_name = article_label
+        if article_title:
+            article_name += f"({article_title})"
+
+        bodies = [
+            _extract_law_body(str(item[1]))
+            for item in chunks
+        ]
+        paragraph_numbers = list(dict.fromkeys(
+            str(item[2].get("paragraph_number", ""))
+            for item in chunks
+            if item[2].get("paragraph_number")
+        ))
+
+        first_metadata["paragraph_number"] = ", ".join(
+            paragraph_numbers
+        )
+        first_metadata["grouped_chunk_count"] = len(chunks)
+        combined_body = "\n\n".join(bodies)
+
+        grouped_ids.append(
+            f"law:{law_id}:{article_key}:grouped"
+        )
+        grouped_documents.append(
+            (
+                f"[법령명]\n{first_metadata.get('law_name', '')}\n\n"
+                f"[조문]\n{article_name}\n\n"
+                f"[내용]\n{combined_body}"
+            ).strip()
+        )
+        grouped_metadatas.append(first_metadata)
+        grouped_distances.append(
+            min(float(item[3]) for item in chunks)
+        )
+
+    return {
+        "ids": [grouped_ids],
+        "documents": [grouped_documents],
+        "metadatas": [grouped_metadatas],
+        "distances": [grouped_distances],
+    }
+
+
+def _extract_law_body(document: str) -> str:
+    marker = "[내용]\n"
+    if marker in document:
+        return document.split(marker, 1)[1].strip()
+    return document.strip()
 
 def format_law_context(
     search_result: dict[str, Any],
