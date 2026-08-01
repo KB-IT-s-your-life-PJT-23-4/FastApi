@@ -96,61 +96,41 @@ LLM 답변 생성
 gift-tax-rag-server/
 ├─ app/
 │  ├─ main.py
-│  │
 │  ├─ api/
-│  │  ├─ router.py
-│  │  └─ routes/
+│  │  ├─ dependencies.py
+│  │  ├─ exception_handlers.py
+│  │  └─ v1/endpoints/
 │  │     ├─ health.py
-│  │     └─ consultation.py
-│  │
+│  │     └─ chat.py
+│  ├─ collectors/
+│  │  ├─ law_article_collector.py
+│  │  └─ nts_interpretation_collector.py
 │  ├─ core/
 │  │  ├─ config.py
-│  │  ├─ logging.py
+│  │  ├─ constants.py
 │  │  └─ exceptions.py
-│  │
 │  ├─ schemas/
-│  │  ├─ consultation.py
-│  │  └─ common.py
-│  │
+│  │  ├─ chat.py
+│  │  ├─ family.py
+│  │  └─ product.py
 │  ├─ services/
-│  │  ├─ rag_service.py
-│  │  ├─ embedding_service.py
-│  │  ├─ llm_service.py
-│  │  └─ document_service.py
-│  │
+│  │  ├─ chat_service.py
+│  │  ├─ retrieval_service.py
+│  │  ├─ clarification_service.py
+│  │  ├─ context_service.py
+│  │  └─ answer_service.py
 │  ├─ repositories/
-│  │  └─ vector_repository.py
-│  │
-│  ├─ prompts/
-│  │  └─ consultation_prompt.py
-│  │
-│  └─ clients/
-│     ├─ openai_client.py
-│     └─ law_api_client.py
-│
-├─ scripts/
-│  ├─ collect_law_data.py
-│  ├─ collect_faq_data.py
-│  ├─ ingest_documents.py
-│  └─ reset_chroma.py
-│
-├─ data/
-│  ├─ raw/
-│  └─ processed/
-│
+│  │  ├─ law_repository.py
+│  │  └─ interpretation_repository.py
+│  └─ prompts/
 ├─ storage/
 │  └─ chroma/
-│
 ├─ tests/
-│  ├─ api/
-│  ├─ services/
-│  └─ conftest.py
-│
+│  └─ test_application.py
 ├─ .env.example
 ├─ .gitignore
 ├─ pyproject.toml
 ├─ uv.lock
-├─ Dockerfile
 └─ README.md
 ```
 
@@ -231,16 +211,17 @@ APP_PORT=8000
 
 OPENAI_API_KEY=your-openai-api-key
 OPENAI_CHAT_MODEL=gpt-5-nano
+OPENAI_EMBEDDING_API_KEY=your-openai-api-key
 OPENAI_EMBEDDING_MODEL=text-embedding-3-small
 
 CHROMA_PATH=storage/chroma
-CHROMA_COLLECTION_NAME=gift_tax_documents
+LAW_COLLECTION_NAME=gift_tax_law_articles
+INTERPRETATION_COLLECTION_NAME=gift_tax_documents
 
-RAG_TOP_K=5
-RAG_MIN_DISTANCE=1.2
+INTERPRETATION_TOP_K=4
+LAW_TOP_K=2
 
 LAW_API_OC=your-law-api-oc
-LAW_API_BASE_URL=https://www.law.go.kr
 ```
 
 > `.env` 파일에는 API Key 등 민감한 정보가 포함되므로 Git에 커밋하지 않습니다.
@@ -287,23 +268,18 @@ RAG 검색에 사용할 법령과 FAQ 데이터는 서버 요청 전에 미리 �
 ### 데이터 수집
 
 ```bash
-uv run python scripts/collect_law_data.py
-uv run python scripts/collect_faq_data.py
+uv run python -m app.collectors.law_article_collector
+uv run python -m app.collectors.nts_interpretation_collector
 ```
 
 수집된 원본 데이터는 다음 경로에 저장합니다.
 
 ```text
-data/raw/
+storage/raw/laws/
+storage/raw/nts_interpretations/
 ```
 
-### 문서 전처리 및 임베딩
-
-```bash
-uv run python scripts/ingest_documents.py
-```
-
-이 과정에서 다음 작업을 수행합니다.
+수집기는 다음 작업을 한 번에 수행합니다.
 
 1. 원본 문서 로드
 2. HTML 태그 및 불필요한 문자열 제거
@@ -325,17 +301,6 @@ uv run python scripts/ingest_documents.py
 }
 ```
 
-### ChromaDB 초기화
-
-개발 중 기존 데이터를 삭제하고 다시 구축하려면 다음 명령어를 실행합니다.
-
-```bash
-uv run python scripts/reset_chroma.py
-uv run python scripts/ingest_documents.py
-```
-
-> 운영 환경에서는 벡터 데이터 초기화 명령을 제한해야 합니다.
-
 ---
 
 ## 9. API 명세
@@ -352,8 +317,7 @@ GET /api/v1/health
 
 ```json
 {
-  "status": "UP",
-  "service": "gift-tax-rag-server"
+  "status": "UP"
 }
 ```
 
@@ -364,7 +328,7 @@ GET /api/v1/health
 사용자 질문을 입력받아 관련 법령과 FAQ를 검색하고 답변을 생성합니다.
 
 ```http
-POST /api/v1/consultations
+POST /api/v1/chat
 Content-Type: application/json
 ```
 
@@ -372,6 +336,7 @@ Content-Type: application/json
 
 ```json
 {
+  "conversation_id": null,
   "question": "성년 자녀에게 5천만 원을 증여하면 증여세가 발생하나요?"
 }
 ```
@@ -380,16 +345,22 @@ Content-Type: application/json
 
 ```json
 {
+  "conversation_id": "2d73489e-e605-40b6-9e39-4f61e024b134",
+  "status": "COMPLETED",
+  "intent": "assessment",
+  "requires_calculation": true,
   "answer": "성년 자녀가 직계존속으로부터 증여받는 경우 일정 금액까지 증여재산공제가 적용될 수 있습니다.",
-  "sources": [
-    {
-      "title": "상속세 및 증여세법 제53조",
-      "sourceType": "LAW",
-      "sourceUrl": "https://www.law.go.kr/...",
-      "content": "거주자가 다음 각 호의 어느 하나에 해당하는 자로부터 증여를 받은 경우..."
-    }
-  ]
+  "clarification_questions": [],
+  "facts": {}
 }
+```
+
+추가 정보가 필요한 경우 응답의 `conversation_id`, `intent`,
+`requires_calculation`, `facts`를 유지하고 답변을 제출합니다.
+
+```http
+POST /api/v1/chat/clarification
+Content-Type: application/json
 ```
 
 ---
@@ -510,7 +481,7 @@ Frontend
 ### Spring에서 호출할 FastAPI 주소
 
 ```text
-POST http://localhost:8000/api/v1/consultations
+POST http://localhost:8000/api/v1/chat
 ```
 
 운영 환경에서는 환경 변수 또는 설정 파일로 API 주소를 관리합니다.
@@ -651,9 +622,7 @@ Pull Request에는 다음 내용을 작성합니다.
 
 ## 19. 라이선스
 
-이 프로젝트의 라이선스는 저장소의 `LICENSE` 파일을 참고하세요.
-
-라이선스가 아직 정해지지 않았다면 다음과 같이 표시할 수 있습니다.
+이 프로젝트는 현재 외부 사용을 위한 라이선스가 정해지지 않았습니다.
 
 ```text
 This project is currently not licensed for external use.
