@@ -2,6 +2,8 @@ from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
 
+from app.collectors import law_article_cosine_collector
+from app.collectors import nts_interpretation_cosine_collector
 from app.core.constants import RAG_INTENTS
 from app.main import app
 from app.repositories.interpretation_repository import (
@@ -108,3 +110,51 @@ def test_retrieval_formats_both_search_results() -> None:
     assert "법령해석 1" in context
     assert "관련 법령 원문" in context
     assert "법령 원문 1" in context
+
+
+def test_cosine_collectors_create_hnsw_cosine_collections(
+    monkeypatch,
+) -> None:
+    calls: list[dict] = []
+    sentinel = object()
+
+    class FakeChromaClient:
+        def get_or_create_collection(self, **kwargs):
+            calls.append(kwargs)
+            return sentinel
+
+    fake_client = FakeChromaClient()
+    monkeypatch.setattr(
+        law_article_cosine_collector,
+        "chroma_client",
+        fake_client,
+    )
+    monkeypatch.setattr(
+        nts_interpretation_cosine_collector,
+        "chroma_client",
+        fake_client,
+    )
+
+    assert (
+        law_article_cosine_collector.get_cosine_law_collection(
+            "law-cosine-test"
+        )
+        is sentinel
+    )
+    assert (
+        nts_interpretation_cosine_collector.
+        get_cosine_interpretation_collection(
+            "interpretation-cosine-test"
+        )
+        is sentinel
+    )
+
+    assert [call["name"] for call in calls] == [
+        "law-cosine-test",
+        "interpretation-cosine-test",
+    ]
+    assert all(
+        call["configuration"]["hnsw"]["space"]
+        == "cosine"
+        for call in calls
+    )

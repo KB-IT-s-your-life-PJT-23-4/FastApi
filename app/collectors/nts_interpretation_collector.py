@@ -863,15 +863,23 @@ collection = chroma_client.get_or_create_collection(
     },
 )
 
+
 def upsert_chunks(
     chunks: list[VectorChunk],
     batch_size: int = 50,
+    target_collection: chromadb.Collection | None = None,
 ) -> None:
+    destination = (
+        target_collection
+        if target_collection is not None
+        else collection
+    )
+
     for chunk_batch in batched(chunks, batch_size):
         texts = [chunk.text for chunk in chunk_batch]
         embeddings = create_embeddings(texts)
 
-        collection.upsert(
+        destination.upsert(
             ids=[
                 chunk.chunk_id
                 for chunk in chunk_batch
@@ -893,6 +901,7 @@ def collect_and_store(
     query: str = "증여",
     start_page: int = 1,
     end_page: int = 20,
+    target_collection: chromadb.Collection | None = None,
 ) -> None:
     session = create_http_session()
 
@@ -939,7 +948,10 @@ def collect_and_store(
                 )
                 continue
 
-            upsert_chunks(chunks)
+            upsert_chunks(
+                chunks,
+                target_collection=target_collection,
+            )
 
             success_count += 1
 

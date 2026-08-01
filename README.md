@@ -104,7 +104,9 @@ gift-tax-rag-server/
 │  │     └─ chat.py
 │  ├─ collectors/
 │  │  ├─ law_article_collector.py
-│  │  └─ nts_interpretation_collector.py
+│  │  ├─ law_article_cosine_collector.py
+│  │  ├─ nts_interpretation_collector.py
+│  │  └─ nts_interpretation_cosine_collector.py
 │  ├─ core/
 │  │  ├─ config.py
 │  │  ├─ constants.py
@@ -271,6 +273,21 @@ RAG 검색에 사용할 법령과 FAQ 데이터는 서버 요청 전에 미리 �
 uv run python -m app.collectors.law_article_collector
 uv run python -m app.collectors.nts_interpretation_collector
 ```
+
+기본 L2 컬렉션과 별도로 Cosine HNSW 컬렉션을 구축하려면
+다음 Cosine 전용 collector 파일을 실행합니다.
+
+```powershell
+uv run python -m app.collectors.law_article_cosine_collector
+uv run python -m app.collectors.nts_interpretation_cosine_collector
+```
+
+기본 Cosine 컬렉션 이름은 각각
+`gift_tax_law_articles_cosine`, `gift_tax_documents_cosine`이며
+`.env`의 `LAW_COSINE_COLLECTION_NAME`,
+`INTERPRETATION_COSINE_COLLECTION_NAME`으로 변경할 수 있습니다.
+서버 검색도 Cosine 컬렉션으로 전환하려면 `LAW_COLLECTION_NAME`과
+`INTERPRETATION_COLLECTION_NAME`에 위 Cosine 컬렉션 이름을 지정합니다.
 
 수집된 원본 데이터는 다음 경로에 저장합니다.
 

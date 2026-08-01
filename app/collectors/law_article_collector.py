@@ -750,15 +750,23 @@ law_collection = (
     )
 )
 
+
 def upsert_law_chunks(
     chunks: list[LawChunk],
     batch_size: int = 50,
+    target_collection: chromadb.Collection | None = None,
 ) -> None:
     if not chunks:
         logging.warning(
             "저장할 법령 청크가 없습니다."
         )
         return
+
+    destination = (
+        target_collection
+        if target_collection is not None
+        else law_collection
+    )
 
     for chunk_batch in batched(
         chunks,
@@ -773,7 +781,7 @@ def upsert_law_chunks(
             texts
         )
 
-        law_collection.upsert(
+        destination.upsert(
             ids=[
                 chunk.chunk_id
                 for chunk in chunk_batch
@@ -939,6 +947,7 @@ def search_gift_tax_law(
 
 def collect_and_store_law(
     mst: str,
+    target_collection: chromadb.Collection | None = None,
 ) -> None:
     session = create_http_session()
 
@@ -975,7 +984,10 @@ def collect_and_store_law(
 
     log_chunk_statistics(chunks)
 
-    upsert_law_chunks(chunks)
+    upsert_law_chunks(
+        chunks,
+        target_collection=target_collection,
+    )
 
     logging.info(
         "법령 ChromaDB 저장 완료: "
