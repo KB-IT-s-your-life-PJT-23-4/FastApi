@@ -424,6 +424,16 @@ def normalize_relationship_type(
     text = str(value).strip()
 
     if text in {
+        "spouse",
+        "parent_to_adult_child",
+        "parent_to_minor_child",
+        "child_to_parent",
+        "other_relative",
+        "other",
+    }:
+        return text
+
+    if text in {
         "자녀",
         "성년 자녀",
         "직계비속",

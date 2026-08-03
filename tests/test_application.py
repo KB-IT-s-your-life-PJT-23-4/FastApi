@@ -36,8 +36,14 @@ from app.services.retrieval_service import (
     RetrievalService,
     group_law_results_by_article,
 )
+from app.services.intent_service import (
+    IntentService,
+    find_matching_family_name,
+)
 from app.prompts.intent import build_question_intent_prompt
 from app.schemas.chat import ChatRequest
+from app.schemas.chat import ClarificationResult, QuestionIntentResult
+from app.services.chat_service import ChatService
 
 
 def test_health_endpoint() -> None:
@@ -127,7 +133,7 @@ def test_families_context_requires_name_based_selection() -> None:
 
     assert "김민수" in context
     assert "김민지" in context
-    assert "이름이 일치하는 가족 한 명의 정보만" in context
+    assert "일치하는 가족 한 명의 정보만" in context
     assert "서로 다른 가족" in context
 
 
@@ -140,6 +146,122 @@ def test_intent_prompt_receives_registered_family_names() -> None:
     assert "[등록 가족 이름]" in prompt
     assert "김민수" in prompt
     assert "김민지" in prompt
+
+
+def test_given_name_matches_unique_registered_family() -> None:
+    matched = find_matching_family_name(
+        "민지에게 2000만원 증여하면 증여세가 얼마나 나오나요?",
+        ["김민수", "김민지"],
+    )
+
+    assert matched == "김민지"
+
+
+def test_ambiguous_given_name_does_not_select_family() -> None:
+    matched = find_matching_family_name(
+        "민지에게 증여하려고 합니다.",
+        ["김민지", "박민지"],
+    )
+
+    assert matched is None
+
+
+def test_assessment_is_overridden_when_family_name_matches() -> None:
+    response = SimpleNamespace(
+        output_text=(
+            '{"intent":"assessment",'
+            '"requires_calculation":true,'
+            '"reason":"일반 계산 질문"}'
+        )
+    )
+    client = SimpleNamespace(
+        responses=SimpleNamespace(
+            create=lambda **kwargs: response
+        )
+    )
+    service = IntentService(
+        client=client,
+        model="test-model",
+    )
+
+    result = service.classify(
+        "민지에게 2000만원 증여하면 증여세가 얼마나 나오나요?",
+        family_names=["김민수", "김민지"],
+    )
+
+    assert result.intent == "family"
+    assert "김민지" in result.reason
+    assert result.requires_calculation is True
+
+
+def test_selected_family_facts_are_used_before_clarification() -> None:
+    captured: dict = {}
+
+    class FakeIntentService:
+        def classify(self, question, family_names):
+            return QuestionIntentResult(
+                intent="family",
+                requires_calculation=True,
+                extracted_facts={"gift_amount": 20_000_000},
+            )
+
+    class FakeClarificationService:
+        def analyze(self, **kwargs):
+            captured.update(kwargs)
+            return ClarificationResult(
+                needs_clarification=False,
+                questions=[],
+                known_facts=[],
+                reason="필수 정보가 모두 있습니다.",
+            )
+
+    service = ChatService(
+        intent_service=FakeIntentService(),
+        retrieval_service=SimpleNamespace(
+            retrieve=lambda question: ""
+        ),
+        clarification_service=FakeClarificationService(),
+        answer_service=SimpleNamespace(
+            generate=lambda **kwargs: "예상 세액 답변"
+        ),
+        context_service=ContextService(),
+    )
+
+    service.process(ChatRequest(
+        question="민지에게 2000만원을 증여하면 얼마인가요?",
+        families=[
+            {
+                "family_id": 1,
+                "name": "김민수",
+                "relationship_type": "parent_to_adult_child",
+                "recipient_age": 30,
+                "recipient_is_minor": False,
+                "has_previous_gifts": False,
+            },
+            {
+                "family_id": 2,
+                "name": "김민지",
+                "relationship_type": "parent_to_adult_child",
+                "gift_amount": 30_000_000,
+                "recipient_age": 25,
+                "recipient_is_minor": False,
+                "has_previous_gifts": True,
+                "previous_gift_amount": 10_000_000,
+                "previous_gift_date": "2023-05-01",
+                "previous_gift_same_donor": True,
+                "previously_used_deduction": 10_000_000,
+            },
+        ],
+    ))
+
+    facts = captured["facts"]
+    assert facts["recipient_name"] == "김민지"
+    assert facts["gift_amount"] == 20_000_000
+    assert facts["relationship_type"] == "parent_to_adult_child"
+    assert facts["recipient_age"] == 25
+    assert facts["recipient_is_minor"] is False
+    assert facts["has_previous_gifts"] is True
+    assert facts["previous_gift_amount"] == 10_000_000
 
 
 def test_openai_clients_use_separate_api_keys(monkeypatch) -> None:
