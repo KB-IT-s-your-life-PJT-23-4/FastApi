@@ -6,6 +6,10 @@ class FamilyData(BaseModel):
     family_id: int
     name: str
     relationship_type: str
+    gift_amount: int | None = Field(
+        default=None,
+        ge=0,
+    )
     recipient_age: int | None = Field(
         default=None,
         ge=0,
@@ -23,3 +27,4 @@ class FamilyData(BaseModel):
         default=0,
         ge=0,
     )
+    deduction_renewal_date: date | None = None

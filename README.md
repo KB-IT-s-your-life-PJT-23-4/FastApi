@@ -6,6 +6,9 @@
 
 > 본 프로젝트의 답변은 참고용이며, 세무사 또는 국세청의 공식 상담을 대체하지 않습니다.
 
+Spring 연동 규격과 시나리오별 요청·응답 예시는
+[SPRING_FASTAPI_API_CONTRACT.md](SPRING_FASTAPI_API_CONTRACT.md)를 참고하세요.
+
 ---
 
 ## 1. 주요 기능
@@ -377,9 +380,34 @@ Content-Type: application/json
 ```json
 {
   "conversation_id": null,
-  "question": "성년 자녀에게 5천만 원을 증여하면 증여세가 발생하나요?"
+  "question": "김민수에게 6천만 원을 증여하면 증여세가 발생하나요?",
+  "families": [
+    {
+      "family_id": 1,
+      "name": "김민수",
+      "relationship_type": "parent_to_adult_child",
+      "gift_amount": 60000000,
+      "recipient_age": 30,
+      "recipient_is_minor": false,
+      "has_previous_gifts": false,
+      "previous_gift_amount": null,
+      "previous_gift_date": null,
+      "previous_gift_same_donor": null,
+      "previously_used_deduction": 0,
+      "deduction_renewal_date": null
+    }
+  ],
+  "facts": {
+    "residency": "국내 거주자",
+    "use_latest_tax_rate": true
+  }
 }
 ```
+
+`families`에는 최대 3명의 등록 가족 정보를 전달할 수 있습니다.
+질문에 가족 이름이 포함되면 AI가 이름이 일치하는 가족 한 명의 정보만
+사용합니다. 이름으로 대상을 특정할 수 없으면 대상 가족의 이름을
+추가로 질문합니다.
 
 #### Response
 
@@ -398,9 +426,71 @@ Content-Type: application/json
 추가 정보가 필요한 경우 응답의 `conversation_id`, `intent`,
 `requires_calculation`, `facts`를 유지하고 답변을 제출합니다.
 
+추가 질문에는 Spring과 프론트가 입력값 형식을 결정할 수 있도록
+`data_type`이 포함됩니다.
+
+```json
+{
+  "status": "CLARIFICATION_REQUIRED",
+  "clarification_questions": [
+    {
+      "key": "has_previous_gifts",
+      "data_type": "boolean",
+      "question": "최근 10년 내 이전 증여가 있었나요?",
+      "reason": "합산 대상 증여 여부를 확인하기 위해 필요합니다."
+    },
+    {
+      "key": "previous_gift_amount",
+      "data_type": "integer",
+      "question": "이전 증여금액은 얼마인가요?",
+      "reason": "합산할 증여금액을 계산하기 위해 필요합니다."
+    },
+    {
+      "key": "previous_gift_date",
+      "data_type": "date",
+      "question": "이전 증여일은 언제인가요?",
+      "reason": "합산 대상 기간을 판단하기 위해 필요합니다."
+    }
+  ]
+}
+```
+
 ```http
 POST /api/v1/chat/clarification
 Content-Type: application/json
+```
+
+```json
+{
+  "conversation_id": "2d73489e-e605-40b6-9e39-4f61e024b134",
+  "question": "김민수에게 6천만 원을 증여하면 증여세가 발생하나요?",
+  "intent": "family",
+  "requires_calculation": true,
+  "facts": {
+    "residency": "국내 거주자",
+    "use_latest_tax_rate": true,
+    "gift_amount": 60000000
+  },
+  "answers": {
+    "has_previous_gifts": false
+  },
+  "families": [
+    {
+      "family_id": 1,
+      "name": "김민수",
+      "relationship_type": "parent_to_adult_child",
+      "gift_amount": 60000000,
+      "recipient_age": 30,
+      "recipient_is_minor": false,
+      "has_previous_gifts": false,
+      "previous_gift_amount": null,
+      "previous_gift_date": null,
+      "previous_gift_same_donor": null,
+      "previously_used_deduction": 0,
+      "deduction_renewal_date": null
+    }
+  ]
+}
 ```
 
 ---

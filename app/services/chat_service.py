@@ -10,10 +10,14 @@ from app.schemas.chat import(
     ChatRequest,
     ChatResponse
 )
+from app.schemas.family import FamilyData
 from app.services.answer_service import AnswerService
 from app.services.clarification_service import ClarificationService
 from app.services.context_service import ContextService
-from app.services.intent_service import IntentService
+from app.services.intent_service import (
+    IntentService,
+    find_matching_family_name,
+)
 from app.services.retrieval_service import RetrievalService
 from app.services.fact_normalization_service import (
     normalize_calculation_facts,
@@ -47,7 +51,11 @@ class ChatService:
         question = request.question.strip()
 
         intent_result = self.intent_service.classify(
-            question
+            question,
+            family_names=[
+                family.name
+                for family in request.families
+            ],
         )
         intent = intent_result.intent
 
@@ -63,7 +71,7 @@ class ChatService:
                 )
             )
 
-        if intent == "family" and request.family is None:
+        if intent == "family" and not request.families:
             return ChatResponse(
                 conversation_id=conversation_id,
                 status="COMPLETED",
@@ -85,8 +93,13 @@ class ChatService:
                 )
             )
 
+        selected_family_facts = self._extract_selected_family_facts(
+            question,
+            request.families,
+        )
         facts = {
             **DEFAULT_FACTS,
+            **selected_family_facts,
             **intent_result.extracted_facts,
             **request.facts
         }
@@ -100,21 +113,14 @@ class ChatService:
         product_context = ""
         rag_context = ""
 
-        if request.family is not None:
-            family_dict = request.family.model_dump(
-                mode="json"
-            )
-
-            if intent == "family":
-                facts.update(
-                    self.context_service.extract_family_facts(
-                        family_dict
-                    )
-                )
-
+        if request.families:
+            families_data = [
+                family.model_dump(mode="json")
+                for family in request.families
+            ]
             family_context = (
-                self.context_service.build_family_context(
-                    family_dict
+                self.context_service.build_families_context(
+                    families_data
                 )
             )
 
@@ -204,8 +210,13 @@ class ChatService:
         self,
         request: ClarificationRequest,
     ) -> ChatResponse:
+        selected_family_facts = self._extract_selected_family_facts(
+            request.question,
+            request.families,
+        )
         facts = {
             **DEFAULT_FACTS,
+            **selected_family_facts,
             **request.facts,
             **request.answers,
         }
@@ -219,17 +230,14 @@ class ChatService:
         product_context = ""
         rag_context = ""
 
-        if request.family is not None:
-            family_dict = request.family.model_dump(mode="json")
-            if intent == "family":
-                facts.update(
-                    self.context_service.extract_family_facts(
-                        family_dict
-                    )
-                )
+        if request.families:
+            families_data = [
+                family.model_dump(mode="json")
+                for family in request.families
+            ]
             family_context = (
-                self.context_service.build_family_context(
-                    family_dict
+                self.context_service.build_families_context(
+                    families_data
                 )
             )
 
@@ -296,3 +304,32 @@ class ChatService:
             answer=answer,
             facts=facts,
         )
+
+    def _extract_selected_family_facts(
+        self,
+        question: str,
+        families: list[FamilyData],
+    ) -> dict:
+        matched_name = find_matching_family_name(
+            question,
+            [family.name for family in families],
+        )
+        if matched_name is None:
+            return {}
+
+        selected_family = next(
+            (
+                family
+                for family in families
+                if family.name == matched_name
+            ),
+            None,
+        )
+        if selected_family is None:
+            return {}
+
+        family_facts = self.context_service.extract_family_facts(
+            selected_family.model_dump(mode="json")
+        )
+        family_facts["recipient_name"] = selected_family.name
+        return family_facts

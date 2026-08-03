@@ -1,5 +1,6 @@
 from openai import OpenAI
 
+from app.core.constants import CLARIFICATION_FACT_DATA_TYPES
 from app.schemas.chat import ClarificationResult
 from app.prompts.clarification import (
     CLARIFICATION_SYSTEM_PROMPT,
@@ -24,7 +25,7 @@ class ClarificationService:
         intent: str,
         requires_calculation: bool,
     ) -> ClarificationResult:
-        if intent != "assessment":
+        if intent not in {"assessment", "family"}:
             return ClarificationResult(
                 needs_clarification=False,
                 questions=[],
@@ -65,6 +66,13 @@ class ClarificationService:
     
         if result.needs_clarification:
             result.questions = result.questions[:3]
+
+            for clarification_question in result.questions:
+                clarification_question.data_type = (
+                    CLARIFICATION_FACT_DATA_TYPES[
+                        clarification_question.key
+                    ]
+                )
     
             if not result.questions:
                 result.needs_clarification = False

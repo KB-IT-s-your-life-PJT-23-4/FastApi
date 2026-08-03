@@ -11,8 +11,8 @@ CLARIFICATION_SYSTEM_PROMPT = """
 정확한 답변을 위해 추가로 확인해야 하는 사실관계를 판단하세요.
 
 규칙:
-1. assessment 질문에만 추가 질문을 생성하세요.
-2. concept, procedure, family, product, other_gift 질문에는
+1. assessment 또는 family 질문에만 추가 질문을 생성하세요.
+2. concept, procedure, product, other_gift 질문에는
    추가 질문을 생성하지 마세요.
 3. 사용자가 이미 제공했거나 서버 데이터에 있는 정보는 다시 묻지 마세요.
 4. 한 번에 최대 3개까지만 질문하세요.
@@ -37,6 +37,18 @@ CLARIFICATION_SYSTEM_PROMPT = """
     known_facts로 추출하고 미성년 여부를 다시 묻지 마세요.
 14. 추가 질문은 "맞나요?" 같은 확인형 질문이 아니라 필요한 실제 값을
     직접 입력받는 형태로 작성하세요.
+15. 등록 가족 목록이 있으면 질문에 포함된 전체 이름 또는 성을 생략한
+    이름으로 유일하게 식별되는 가족 한 명의 정보만 사용하세요.
+16. 서로 다른 가족의 사실을 합치지 마세요.
+17. 질문에 이름이 없거나 이름만으로 한 명을 특정할 수 없으면
+    recipient_name으로 대상 가족의 이름을 질문하세요.
+18. 대상 가족을 특정했다면 그 가족의 계산 관련 정보를 known_facts에
+    포함하고 이미 제공된 정보는 다시 묻지 마세요.
+19. 질문 key에 맞는 data_type을 다음 규칙으로 지정하세요.
+    - recipient_name, relationship_type: string
+    - gift_amount, recipient_age, previous_gift_amount: integer
+    - recipient_is_minor, has_previous_gifts, previous_gift_same_donor: boolean
+    - gift_date, previous_gift_date: date
 """.strip()
 
 
@@ -55,6 +67,7 @@ CLARIFICATION_SCHEMA = {
                     "key": {
                         "type": "string",
                         "enum": [
+                            "recipient_name",
                             "gift_amount",
                             "relationship_type",
                             "recipient_age",
@@ -69,6 +82,15 @@ CLARIFICATION_SCHEMA = {
                     "question": {
                         "type": "string",
                     },
+                    "data_type": {
+                        "type": "string",
+                        "enum": [
+                            "string",
+                            "integer",
+                            "boolean",
+                            "date",
+                        ],
+                    },
                     "reason": {
                         "type": "string",
                     },
@@ -78,6 +100,7 @@ CLARIFICATION_SCHEMA = {
                 },
                 "required": [
                     "key",
+                    "data_type",
                     "question",
                     "reason",
                     "required",
@@ -93,6 +116,7 @@ CLARIFICATION_SCHEMA = {
                     "key": {
                         "type": "string",
                         "enum": [
+                            "recipient_name",
                             "gift_amount",
                             "relationship_type",
                             "recipient_age",
@@ -160,11 +184,16 @@ def build_clarification_prompt(
 추가 확인이 필요한 사실관계가 있는지 판단하세요.
 
 세부 규칙:
-- assessment 질문에서만 추가 질문을 생성하세요.
+- assessment 또는 family 질문에서만 추가 질문을 생성하세요.
 - requires_calculation이 true이면 계산 필수값을 확인하세요.
 - has_previous_gifts가 없거나 확인되지 않았다면 질문하세요.
 - has_previous_gifts가 false이면 과거 증여 관련 내용을 묻지 마세요.
 - 이미 제공된 사실은 다시 묻지 마세요.
 - 최초 질문의 금액, 나이, 관계는 known_facts에 원래 값으로 보존하세요.
 - 이미 나온 값을 "맞음" 또는 "예"로 재확인하지 마세요.
+- 등록 가족 목록이 있으면 전체 이름 또는 성을 생략한 이름으로 유일하게
+  식별되는 한 명의 정보만 사용하세요.
+- 대상 가족을 특정할 수 없을 때만 recipient_name을 질문하세요.
+- 서로 다른 가족의 정보를 하나의 계산 사실로 합치지 마세요.
+- 각 추가 질문에는 key에 맞는 data_type을 반드시 포함하세요.
 """.strip()
