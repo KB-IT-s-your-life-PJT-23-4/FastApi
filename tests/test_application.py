@@ -40,6 +40,7 @@ from app.services.intent_service import (
     IntentService,
     find_matching_family_name,
 )
+from app.services.clarification_service import ClarificationService
 from app.prompts.intent import build_question_intent_prompt
 from app.schemas.chat import ChatRequest
 from app.schemas.chat import ClarificationResult, QuestionIntentResult
@@ -262,6 +263,50 @@ def test_selected_family_facts_are_used_before_clarification() -> None:
     assert facts["recipient_is_minor"] is False
     assert facts["has_previous_gifts"] is True
     assert facts["previous_gift_amount"] == 10_000_000
+
+
+def test_clarification_question_data_type_is_corrected_by_key() -> None:
+    response = SimpleNamespace(
+        output_text=(
+            '{"needs_clarification":true,'
+            '"questions":[{'
+            '"key":"has_previous_gifts",'
+            '"data_type":"string",'
+            '"question":"이전 증여가 있었나요?",'
+            '"reason":"합산 여부 확인",'
+            '"required":true}],'
+            '"known_facts":[],'
+            '"reason":"이전 증여 여부가 필요합니다."}'
+        )
+    )
+    client = SimpleNamespace(
+        responses=SimpleNamespace(
+            create=lambda **kwargs: response
+        )
+    )
+    service = ClarificationService(
+        client=client,
+        model="test-model",
+    )
+
+    result = service.analyze(
+        question="증여세를 계산해 주세요.",
+        context="",
+        facts={},
+        intent="assessment",
+        requires_calculation=True,
+    )
+
+    assert result.questions[0].data_type == "boolean"
+
+
+def test_clarification_question_schema_exposes_data_type() -> None:
+    schema = app.openapi()["components"]["schemas"][
+        "ClarificationQuestion"
+    ]
+
+    assert "data_type" in schema["properties"]
+    assert "data_type" in schema["required"]
 
 
 def test_openai_clients_use_separate_api_keys(monkeypatch) -> None:

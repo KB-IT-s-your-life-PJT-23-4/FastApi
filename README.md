@@ -423,6 +423,35 @@ Content-Type: application/json
 추가 정보가 필요한 경우 응답의 `conversation_id`, `intent`,
 `requires_calculation`, `facts`를 유지하고 답변을 제출합니다.
 
+추가 질문에는 Spring과 프론트가 입력값 형식을 결정할 수 있도록
+`data_type`이 포함됩니다.
+
+```json
+{
+  "status": "CLARIFICATION_REQUIRED",
+  "clarification_questions": [
+    {
+      "key": "has_previous_gifts",
+      "data_type": "boolean",
+      "question": "최근 10년 내 이전 증여가 있었나요?",
+      "reason": "합산 대상 증여 여부를 확인하기 위해 필요합니다."
+    },
+    {
+      "key": "previous_gift_amount",
+      "data_type": "integer",
+      "question": "이전 증여금액은 얼마인가요?",
+      "reason": "합산할 증여금액을 계산하기 위해 필요합니다."
+    },
+    {
+      "key": "previous_gift_date",
+      "data_type": "date",
+      "question": "이전 증여일은 언제인가요?",
+      "reason": "합산 대상 기간을 판단하기 위해 필요합니다."
+    }
+  ]
+}
+```
+
 ```http
 POST /api/v1/chat/clarification
 Content-Type: application/json

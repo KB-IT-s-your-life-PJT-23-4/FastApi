@@ -85,3 +85,16 @@ FACT_KEY_ALIASES = {
         "previous_gift_same_donor"
     ),
 }
+
+CLARIFICATION_FACT_DATA_TYPES = {
+    "recipient_name": "string",
+    "gift_amount": "integer",
+    "relationship_type": "string",
+    "recipient_age": "integer",
+    "recipient_is_minor": "boolean",
+    "gift_date": "date",
+    "has_previous_gifts": "boolean",
+    "previous_gift_amount": "integer",
+    "previous_gift_date": "date",
+    "previous_gift_same_donor": "boolean",
+}

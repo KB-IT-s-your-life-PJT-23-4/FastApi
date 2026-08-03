@@ -44,6 +44,11 @@ CLARIFICATION_SYSTEM_PROMPT = """
     recipient_name으로 대상 가족의 이름을 질문하세요.
 18. 대상 가족을 특정했다면 그 가족의 계산 관련 정보를 known_facts에
     포함하고 이미 제공된 정보는 다시 묻지 마세요.
+19. 질문 key에 맞는 data_type을 다음 규칙으로 지정하세요.
+    - recipient_name, relationship_type: string
+    - gift_amount, recipient_age, previous_gift_amount: integer
+    - recipient_is_minor, has_previous_gifts, previous_gift_same_donor: boolean
+    - gift_date, previous_gift_date: date
 """.strip()
 
 
@@ -77,6 +82,15 @@ CLARIFICATION_SCHEMA = {
                     "question": {
                         "type": "string",
                     },
+                    "data_type": {
+                        "type": "string",
+                        "enum": [
+                            "string",
+                            "integer",
+                            "boolean",
+                            "date",
+                        ],
+                    },
                     "reason": {
                         "type": "string",
                     },
@@ -86,6 +100,7 @@ CLARIFICATION_SCHEMA = {
                 },
                 "required": [
                     "key",
+                    "data_type",
                     "question",
                     "reason",
                     "required",
@@ -180,4 +195,5 @@ def build_clarification_prompt(
   식별되는 한 명의 정보만 사용하세요.
 - 대상 가족을 특정할 수 없을 때만 recipient_name을 질문하세요.
 - 서로 다른 가족의 정보를 하나의 계산 사실로 합치지 마세요.
+- 각 추가 질문에는 key에 맞는 data_type을 반드시 포함하세요.
 """.strip()

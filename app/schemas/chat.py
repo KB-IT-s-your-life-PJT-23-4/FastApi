@@ -30,6 +30,12 @@ class ChatRequest(BaseModel):
 
 class ClarificationQuestion(BaseModel):
     key: str
+    data_type: Literal[
+        "string",
+        "integer",
+        "boolean",
+        "date",
+    ]
     question: str
     reason: str | None = None
 
