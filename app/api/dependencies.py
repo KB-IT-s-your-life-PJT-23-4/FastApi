@@ -26,6 +26,15 @@ def get_openai_client() -> OpenAI:
 
 
 @lru_cache
+def get_openai_embedding_client() -> OpenAI:
+    settings = get_settings()
+
+    return OpenAI(
+        api_key=settings.openai_embedding_api_key,
+    )
+
+
+@lru_cache
 def get_chroma_client():
     settings = get_settings()
     return chromadb.PersistentClient(path=settings.chroma_path)
@@ -39,7 +48,7 @@ def get_interpretation_repository() -> InterpretationRepository:
     )
     return InterpretationRepository(
         collection=collection,
-        embedding_client=get_openai_client(),
+        embedding_client=get_openai_embedding_client(),
         embedding_model=settings.openai_embedding_model,
     )
 
@@ -52,7 +61,7 @@ def get_law_repository() -> LawRepository:
     )
     return LawRepository(
         collection=collection,
-        embedding_client=get_openai_client(),
+        embedding_client=get_openai_embedding_client(),
         embedding_model=settings.openai_embedding_model,
     )
 

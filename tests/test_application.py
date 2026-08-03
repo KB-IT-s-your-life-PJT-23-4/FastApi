@@ -2,6 +2,7 @@ from types import SimpleNamespace
 
 from fastapi.testclient import TestClient
 
+from app.api import dependencies
 from app.collectors import law_article_cosine_collector
 from app.collectors import nts_interpretation_cosine_collector
 from app.collectors.nts_interpretation_collector import (
@@ -46,6 +47,42 @@ def test_chat_routes_are_registered() -> None:
 
     assert "/api/v1/chat" in paths
     assert "/api/v1/chat/clarification" in paths
+
+
+def test_openai_clients_use_separate_api_keys(monkeypatch) -> None:
+    class FakeOpenAI:
+        def __init__(self, *, api_key: str) -> None:
+            self.api_key = api_key
+
+    settings = SimpleNamespace(
+        openai_api_key="chat-api-key",
+        openai_embedding_api_key="embedding-api-key",
+    )
+
+    dependencies.get_openai_client.cache_clear()
+    dependencies.get_openai_embedding_client.cache_clear()
+    monkeypatch.setattr(
+        dependencies,
+        "get_settings",
+        lambda: settings,
+    )
+    monkeypatch.setattr(
+        dependencies,
+        "OpenAI",
+        FakeOpenAI,
+    )
+
+    try:
+        chat_client = dependencies.get_openai_client()
+        embedding_client = (
+            dependencies.get_openai_embedding_client()
+        )
+
+        assert chat_client.api_key == "chat-api-key"
+        assert embedding_client.api_key == "embedding-api-key"
+    finally:
+        dependencies.get_openai_client.cache_clear()
+        dependencies.get_openai_embedding_client.cache_clear()
 
 
 def test_answer_prompt_uses_conversational_style() -> None:
