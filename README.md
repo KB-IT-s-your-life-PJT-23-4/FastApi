@@ -6,6 +6,9 @@
 
 > 본 프로젝트의 답변은 참고용이며, 세무사 또는 국세청의 공식 상담을 대체하지 않습니다.
 
+Spring 연동 규격과 시나리오별 요청·응답 예시는
+[SPRING_FASTAPI_API_CONTRACT.md](SPRING_FASTAPI_API_CONTRACT.md)를 참고하세요.
+
 ---
 
 ## 1. 주요 기능
