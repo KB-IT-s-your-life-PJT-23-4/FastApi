@@ -24,7 +24,7 @@ class ClarificationService:
         intent: str,
         requires_calculation: bool,
     ) -> ClarificationResult:
-        if intent != "assessment":
+        if intent not in {"assessment", "family"}:
             return ClarificationResult(
                 needs_clarification=False,
                 questions=[],

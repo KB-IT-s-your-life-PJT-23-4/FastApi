@@ -1,6 +1,8 @@
 from types import SimpleNamespace
 
+import pytest
 from fastapi.testclient import TestClient
+from pydantic import ValidationError
 
 from app.api import dependencies
 from app.collectors import law_article_cosine_collector
@@ -21,6 +23,7 @@ from app.prompts.answer import (
     build_final_answer_prompt,
 )
 from app.prompts.context import build_gift_tax_rule_context
+from app.prompts.context import build_families_context
 from app.repositories.interpretation_repository import (
     InterpretationRepository,
 )
@@ -33,6 +36,8 @@ from app.services.retrieval_service import (
     RetrievalService,
     group_law_results_by_article,
 )
+from app.prompts.intent import build_question_intent_prompt
+from app.schemas.chat import ChatRequest
 
 
 def test_health_endpoint() -> None:
@@ -47,6 +52,94 @@ def test_chat_routes_are_registered() -> None:
 
     assert "/api/v1/chat" in paths
     assert "/api/v1/chat/clarification" in paths
+
+
+def test_chat_requests_use_families_instead_of_family() -> None:
+    schemas = app.openapi()["components"]["schemas"]
+
+    for schema_name in ["ChatRequest", "ClarificationRequest"]:
+        properties = schemas[schema_name]["properties"]
+        assert "families" in properties
+        assert "family" not in properties
+
+
+def test_chat_request_rejects_legacy_family_field() -> None:
+    with pytest.raises(ValidationError):
+        ChatRequest(
+            question="김민수에게 증여하면 세금이 얼마인가요?",
+            family={
+                "family_id": 1,
+                "name": "김민수",
+                "relationship_type": "parent_to_adult_child",
+            },
+        )
+
+
+def test_chat_request_accepts_up_to_three_families() -> None:
+    family = {
+        "family_id": 1,
+        "name": "김민수",
+        "relationship_type": "parent_to_adult_child",
+        "recipient_age": 30,
+        "gift_amount": 60_000_000,
+    }
+
+    request = ChatRequest(
+        question="김민수에게 증여하면 세금이 얼마인가요?",
+        families=[
+            {**family, "family_id": family_id}
+            for family_id in range(1, 4)
+        ],
+    )
+
+    assert len(request.families) == 3
+
+
+def test_chat_request_rejects_more_than_three_families() -> None:
+    family = {
+        "name": "김민수",
+        "relationship_type": "parent_to_adult_child",
+    }
+
+    with pytest.raises(ValidationError):
+        ChatRequest(
+            question="증여세를 계산해 주세요.",
+            families=[
+                {**family, "family_id": family_id}
+                for family_id in range(1, 5)
+            ],
+        )
+
+
+def test_families_context_requires_name_based_selection() -> None:
+    context = build_families_context([
+        {
+            "family_id": 1,
+            "name": "김민수",
+            "relationship_type": "parent_to_adult_child",
+        },
+        {
+            "family_id": 2,
+            "name": "김민지",
+            "relationship_type": "parent_to_adult_child",
+        },
+    ])
+
+    assert "김민수" in context
+    assert "김민지" in context
+    assert "이름이 일치하는 가족 한 명의 정보만" in context
+    assert "서로 다른 가족" in context
+
+
+def test_intent_prompt_receives_registered_family_names() -> None:
+    prompt = build_question_intent_prompt(
+        "김민수에게 증여하면 세금이 얼마인가요?",
+        family_names=["김민수", "김민지"],
+    )
+
+    assert "[등록 가족 이름]" in prompt
+    assert "김민수" in prompt
+    assert "김민지" in prompt
 
 
 def test_openai_clients_use_separate_api_keys(monkeypatch) -> None:

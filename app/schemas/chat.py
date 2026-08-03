@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.schemas.family import FamilyData
 from app.schemas.product import ProductData
@@ -14,12 +14,17 @@ ChatStatus = Literal[
 ]
 
 class ChatRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     conversation_id: str | None = None
     question: str = Field(
         min_length=1,
         max_length=2000,
     )
-    family: FamilyData | None = None
+    families: list[FamilyData] = Field(
+        default_factory=list,
+        max_length=3,
+    )
     product: ProductData | None = None
     facts: dict[str, Any] = Field(default_factory=dict)
 
@@ -41,13 +46,18 @@ class ChatResponse(BaseModel):
     facts: dict[str, Any] = Field(default_factory=dict)
 
 class ClarificationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     conversation_id: str
     question: str
     intent: str
     requires_calculation: bool = False
     facts: dict[str, Any]
     answers: dict[str, Any]
-    family: FamilyData | None = None
+    families: list[FamilyData] = Field(
+        default_factory=list,
+        max_length=3,
+    )
     product: ProductData | None = None
 
 QuestionIntent = Literal[

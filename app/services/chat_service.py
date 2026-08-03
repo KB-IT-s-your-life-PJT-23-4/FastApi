@@ -47,7 +47,11 @@ class ChatService:
         question = request.question.strip()
 
         intent_result = self.intent_service.classify(
-            question
+            question,
+            family_names=[
+                family.name
+                for family in request.families
+            ],
         )
         intent = intent_result.intent
 
@@ -63,7 +67,7 @@ class ChatService:
                 )
             )
 
-        if intent == "family" and request.family is None:
+        if intent == "family" and not request.families:
             return ChatResponse(
                 conversation_id=conversation_id,
                 status="COMPLETED",
@@ -100,21 +104,14 @@ class ChatService:
         product_context = ""
         rag_context = ""
 
-        if request.family is not None:
-            family_dict = request.family.model_dump(
-                mode="json"
-            )
-
-            if intent == "family":
-                facts.update(
-                    self.context_service.extract_family_facts(
-                        family_dict
-                    )
-                )
-
+        if request.families:
+            families_data = [
+                family.model_dump(mode="json")
+                for family in request.families
+            ]
             family_context = (
-                self.context_service.build_family_context(
-                    family_dict
+                self.context_service.build_families_context(
+                    families_data
                 )
             )
 
@@ -219,17 +216,14 @@ class ChatService:
         product_context = ""
         rag_context = ""
 
-        if request.family is not None:
-            family_dict = request.family.model_dump(mode="json")
-            if intent == "family":
-                facts.update(
-                    self.context_service.extract_family_facts(
-                        family_dict
-                    )
-                )
+        if request.families:
+            families_data = [
+                family.model_dump(mode="json")
+                for family in request.families
+            ]
             family_context = (
-                self.context_service.build_family_context(
-                    family_dict
+                self.context_service.build_families_context(
+                    families_data
                 )
             )
 

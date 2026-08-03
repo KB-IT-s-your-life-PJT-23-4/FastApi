@@ -23,6 +23,31 @@ def build_family_context(
 """.strip()
 
 
+def build_families_context(
+    families_data: list[dict[str, Any]] | None,
+) -> str:
+    if not families_data:
+        return ""
+
+    return f"""
+[등록 가족 목록]
+다음 정보는 Spring 서버 또는 데이터베이스에서 조회한 정보입니다.
+
+질문에 가족 이름이 포함되어 있으면 이름이 일치하는 가족 한 명의 정보만
+사용하세요. 서로 다른 가족의 관계, 나이, 증여금액 또는 과거 증여 정보를
+합치지 마세요.
+
+이름이 없거나 같은 이름이 여러 명이어서 대상을 특정할 수 없다면
+추측하지 말고 대상 가족의 이름을 확인하세요.
+
+{json.dumps(
+    families_data,
+    ensure_ascii=False,
+    indent=2,
+)}
+""".strip()
+
+
 def build_product_context(
     product_data: dict[str, Any] | None,
 ) -> str:

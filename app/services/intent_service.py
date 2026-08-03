@@ -22,8 +22,12 @@ class IntentService:
     def classify(
         self,
         question: str,
+        family_names: list[str] | None = None,
     ) -> QuestionIntentResult:
-        prompt = build_question_intent_prompt(question)
+        prompt = build_question_intent_prompt(
+            question,
+            family_names=family_names,
+        )
 
         response = self.client.responses.create(
             model=self.model,

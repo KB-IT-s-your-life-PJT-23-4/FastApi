@@ -377,9 +377,34 @@ Content-Type: application/json
 ```json
 {
   "conversation_id": null,
-  "question": "성년 자녀에게 5천만 원을 증여하면 증여세가 발생하나요?"
+  "question": "김민수에게 6천만 원을 증여하면 증여세가 발생하나요?",
+  "families": [
+    {
+      "family_id": 1,
+      "name": "김민수",
+      "relationship_type": "parent_to_adult_child",
+      "gift_amount": 60000000,
+      "recipient_age": 30,
+      "recipient_is_minor": false,
+      "has_previous_gifts": false,
+      "previous_gift_amount": null,
+      "previous_gift_date": null,
+      "previous_gift_same_donor": null,
+      "previously_used_deduction": 0,
+      "deduction_renewal_date": null
+    }
+  ],
+  "facts": {
+    "residency": "국내 거주자",
+    "use_latest_tax_rate": true
+  }
 }
 ```
+
+`families`에는 최대 3명의 등록 가족 정보를 전달할 수 있습니다.
+질문에 가족 이름이 포함되면 AI가 이름이 일치하는 가족 한 명의 정보만
+사용합니다. 이름으로 대상을 특정할 수 없으면 대상 가족의 이름을
+추가로 질문합니다.
 
 #### Response
 
@@ -401,6 +426,39 @@ Content-Type: application/json
 ```http
 POST /api/v1/chat/clarification
 Content-Type: application/json
+```
+
+```json
+{
+  "conversation_id": "2d73489e-e605-40b6-9e39-4f61e024b134",
+  "question": "김민수에게 6천만 원을 증여하면 증여세가 발생하나요?",
+  "intent": "family",
+  "requires_calculation": true,
+  "facts": {
+    "residency": "국내 거주자",
+    "use_latest_tax_rate": true,
+    "gift_amount": 60000000
+  },
+  "answers": {
+    "has_previous_gifts": false
+  },
+  "families": [
+    {
+      "family_id": 1,
+      "name": "김민수",
+      "relationship_type": "parent_to_adult_child",
+      "gift_amount": 60000000,
+      "recipient_age": 30,
+      "recipient_is_minor": false,
+      "has_previous_gifts": false,
+      "previous_gift_amount": null,
+      "previous_gift_date": null,
+      "previous_gift_same_donor": null,
+      "previously_used_deduction": 0,
+      "deduction_renewal_date": null
+    }
+  ]
+}
 ```
 
 ---

@@ -13,6 +13,7 @@ from app.data.gift_tax_rules import (
 from app.prompts.context import(
     build_calculation_failure_context,
     build_family_context,
+    build_families_context,
     build_gift_tax_rule_context,
     build_product_context,
     combine_contexts
@@ -64,6 +65,15 @@ class ContextService:
 
         return build_family_context(
             family_data
+        )
+
+    def build_families_context(
+        self,
+        families_data: list[dict[str, Any]] | None,
+    ) -> str:
+        """등록 가족 목록을 이름 선택 규칙과 함께 LLM Context로 변환한다."""
+        return build_families_context(
+            families_data
         )
 
     def build_product_context(

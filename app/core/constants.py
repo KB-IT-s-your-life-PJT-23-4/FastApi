@@ -23,6 +23,7 @@ DEFAULT_FACTS = {
 }
 
 FAMILY_FACT_KEYS = {
+    "gift_amount",
     "relationship_type",
     "recipient_age",
     "recipient_is_minor",
@@ -31,6 +32,7 @@ FAMILY_FACT_KEYS = {
     "previous_gift_date",
     "previous_gift_same_donor",
     "previously_used_deduction",
+    "deduction_renewal_date",
 }
 
 FACT_KEY_ALIASES = {
