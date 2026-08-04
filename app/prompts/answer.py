@@ -15,7 +15,7 @@ FINAL_ANSWER_SYSTEM_PROMPT = """
 2. 자연스럽고 친절한 존댓말을 사용하세요.
 3. 사용자의 질문이나 서버 정보를 불필요하게 반복하지 마세요.
 4. 간단한 질문은 2~4문장으로 간결하게 답하세요.
-5. 복잡한 설명이나 세액 계산에만 제목과 목록을 사용하세요.
+5. 복잡한 설명이나 세액 계산은 JSON의 sections로 구분하세요.
 6. 참고 문서를 그대로 나열하거나 전문을 복사하지 말고,
    질문과 직접 관련된 핵심만 일상적인 표현으로 설명하세요.
 7. 법령 근거는 답변 마지막에 짧게 정리하세요.
@@ -51,12 +51,65 @@ FINAL_ANSWER_SYSTEM_PROMPT = """
 16. 등록 가족 목록이 제공되면 질문의 전체 이름 또는 성을 생략한 이름으로
     유일하게 식별되는 가족 한 명의 정보만 사용하고, 서로 다른 가족의
     정보를 합쳐 계산하지 마세요.
+17. Markdown 문법(`#`, `##`, `###`, `**`, 백틱, Markdown 목록 기호)을
+    모든 문자열 값에 사용하지 마세요.
+18. summary에는 결론을, sections에는 설명과 계산 과정만, sources에는
+    법령 근거만, notice에는 주의사항만 작성하세요.
 """.strip()
 
+
+FINAL_ANSWER_SCHEMA = {
+    "type": "object",
+    "properties": {
+        "summary": {
+            "type": "string",
+        },
+        "sections": {
+            "type": "array",
+            "maxItems": 5,
+            "items": {
+                "type": "object",
+                "properties": {
+                    "title": {
+                        "type": "string",
+                    },
+                    "items": {
+                        "type": "array",
+                        "items": {
+                            "type": "string",
+                        },
+                    },
+                },
+                "required": [
+                    "title",
+                    "items",
+                ],
+                "additionalProperties": False,
+            },
+        },
+        "sources": {
+            "type": "array",
+            "items": {
+                "type": "string",
+            },
+        },
+        "notice": {
+            "type": ["string", "null"],
+        },
+    },
+    "required": [
+        "summary",
+        "sections",
+        "sources",
+        "notice",
+    ],
+    "additionalProperties": False,
+}
+
 ANSWER_FORMATS: dict[str, str] = {
-    "concept": """
+"concept": """
 첫 문장에서 용어의 의미를 쉽게 설명하세요.
-예시를 덧붙이세요.
+필요한 경우에만 짧은 예시를 덧붙이세요.
 마지막에 관련 법령 근거를 한두 줄로 표시하세요.
 """.strip(),
 

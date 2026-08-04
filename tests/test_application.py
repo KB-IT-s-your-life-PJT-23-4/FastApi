@@ -48,6 +48,11 @@ from app.schemas.chat import (
     KnownFact,
     QuestionIntentResult,
 )
+from app.schemas.answer import AnswerSection, StructuredAnswer
+from app.services.answer_service import (
+    AnswerService,
+    render_plain_text_answer,
+)
 from app.services.chat_service import ChatService, merge_known_facts
 
 
@@ -510,6 +515,67 @@ def test_answer_prompt_uses_conversational_style() -> None:
     )
     assert "문서 전문, 청크 ID, 검색 거리" in prompt
     assert "필요한 경우에만 짧은 예시" in prompt
+
+
+def test_structured_answer_is_rendered_without_markdown() -> None:
+    rendered = render_plain_text_answer(
+        StructuredAnswer(
+            summary="**예상 세액은 10만원입니다.**",
+            sections=[
+                AnswerSection(
+                    title="### 계산 과정",
+                    items=[
+                        "**증여금액**: 6,000만원",
+                        "과세표준 × 10% = 10만원",
+                    ],
+                )
+            ],
+            sources=["**상속세 및 증여세법** 제55조"],
+            notice="`간이 추정액`입니다.",
+        )
+    )
+
+    assert "###" not in rendered
+    assert "**" not in rendered
+    assert "`" not in rendered
+    assert "계산 과정" in rendered
+    assert "1. 증여금액: 6,000만원" in rendered
+    assert "근거" in rendered
+    assert "안내" in rendered
+
+
+def test_answer_service_uses_structured_output() -> None:
+    captured: dict = {}
+
+    def create_response(**kwargs):
+        captured.update(kwargs)
+        return SimpleNamespace(
+            output_text=(
+                '{"summary":"예상 세액은 10만원입니다.",'
+                '"sections":[],"sources":[],'
+                '"notice":"간이 추정액입니다."}'
+            )
+        )
+
+    service = AnswerService(
+        client=SimpleNamespace(
+            responses=SimpleNamespace(create=create_response)
+        ),
+        model="test-model",
+    )
+
+    answer = service.generate(
+        question="증여세가 얼마인가요?",
+        context="참고 자료",
+        facts={},
+        intent="assessment",
+    )
+
+    assert captured["text"]["format"]["type"] == "json_schema"
+    assert answer == (
+        "예상 세액은 10만원입니다.\n\n"
+        "안내\n간이 추정액입니다."
+    )
 
 
 def test_question_facts_override_confirmation_answers() -> None:

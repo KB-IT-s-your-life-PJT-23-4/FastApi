@@ -166,7 +166,7 @@ Content-Type: application/json
 | `status` | `string` | `COMPLETED`, `CLARIFICATION_REQUIRED`, `REJECTED` |
 | `intent` | `string` | 분류된 질문 유형 |
 | `requires_calculation` | `boolean` | 세액 등의 수치 계산 필요 여부 |
-| `answer` | `string \| null` | 완료 또는 거절 답변 |
+| `answer` | `string \| null` | 완료 또는 거절 답변. Markdown 문법이 없는 표시용 일반 텍스트 |
 | `clarification_questions` | `array` | 추가 질문 목록, 최대 3개 |
 | `facts` | `object` | 현재까지 확인·정규화된 사실 |
 
