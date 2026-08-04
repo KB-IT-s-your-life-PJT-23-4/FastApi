@@ -42,9 +42,13 @@ from app.services.intent_service import (
 )
 from app.services.clarification_service import ClarificationService
 from app.prompts.intent import build_question_intent_prompt
-from app.schemas.chat import ChatRequest
-from app.schemas.chat import ClarificationResult, QuestionIntentResult
-from app.services.chat_service import ChatService
+from app.schemas.chat import (
+    ChatRequest,
+    ClarificationResult,
+    KnownFact,
+    QuestionIntentResult,
+)
+from app.services.chat_service import ChatService, merge_known_facts
 
 
 def test_health_endpoint() -> None:
@@ -307,6 +311,151 @@ def test_clarification_question_schema_exposes_data_type() -> None:
 
     assert "data_type" in schema["properties"]
     assert "data_type" in schema["required"]
+
+
+def test_known_false_and_zero_facts_are_not_asked_again() -> None:
+    response = SimpleNamespace(
+        output_text=(
+            '{"needs_clarification":true,'
+            '"questions":['
+            '{"key":"has_previous_gifts",'
+            '"data_type":"boolean",'
+            '"question":"이전 증여가 있었나요?",'
+            '"reason":"합산 여부 확인","required":true},'
+            '{"key":"previous_gift_amount",'
+            '"data_type":"integer",'
+            '"question":"이전 증여금액은 얼마인가요?",'
+            '"reason":"합산 금액 확인","required":true},'
+            '{"key":"previous_gift_date",'
+            '"data_type":"date",'
+            '"question":"이전 증여일은 언제인가요?",'
+            '"reason":"합산 기간 확인","required":true},'
+            '{"key":"previous_gift_same_donor",'
+            '"data_type":"boolean",'
+            '"question":"동일한 증여자인가요?",'
+            '"reason":"합산 대상 확인","required":true}],'
+            '"known_facts":[],'
+            '"reason":"추가 정보가 필요합니다."}'
+        )
+    )
+    service = ClarificationService(
+        client=SimpleNamespace(
+            responses=SimpleNamespace(
+                create=lambda **kwargs: response
+            )
+        ),
+        model="test-model",
+    )
+
+    result = service.analyze(
+        question="성인 자녀에게 증여하려고 합니다.",
+        context="",
+        facts={
+            "has_previous_gifts": False,
+            "previous_gift_amount": 0,
+            "previous_gift_date": "",
+            "previous_gift_same_donor": False,
+        },
+        intent="assessment",
+        requires_calculation=True,
+    )
+
+    assert result.needs_clarification is False
+    assert result.questions == []
+
+
+def test_duplicate_clarification_keys_are_removed() -> None:
+    response = SimpleNamespace(
+        output_text=(
+            '{"needs_clarification":true,'
+            '"questions":['
+            '{"key":"has_previous_gifts",'
+            '"data_type":"string",'
+            '"question":"이전 증여가 있었나요?",'
+            '"reason":"합산 여부 확인","required":true},'
+            '{"key":"has_previous_gifts",'
+            '"data_type":"string",'
+            '"question":"과거 증여 여부를 알려주세요.",'
+            '"reason":"합산 여부 확인","required":true}],'
+            '"known_facts":[],'
+            '"reason":"이전 증여 여부가 필요합니다."}'
+        )
+    )
+    service = ClarificationService(
+        client=SimpleNamespace(
+            responses=SimpleNamespace(
+                create=lambda **kwargs: response
+            )
+        ),
+        model="test-model",
+    )
+
+    result = service.analyze(
+        question="증여세를 계산해 주세요.",
+        context="",
+        facts={},
+        intent="assessment",
+        requires_calculation=True,
+    )
+
+    assert len(result.questions) == 1
+    assert result.questions[0].key == "has_previous_gifts"
+    assert result.questions[0].data_type == "boolean"
+
+
+def test_known_fact_replaces_unknown_but_not_valid_false() -> None:
+    facts = {
+        "gift_amount": None,
+        "has_previous_gifts": False,
+    }
+
+    merge_known_facts(
+        facts,
+        [
+            KnownFact(key="gift_amount", value="6000만원"),
+            KnownFact(key="has_previous_gifts", value="true"),
+        ],
+    )
+
+    assert facts["gift_amount"] == "6000만원"
+    assert facts["has_previous_gifts"] is False
+
+
+def test_known_fact_from_same_llm_response_removes_question() -> None:
+    response = SimpleNamespace(
+        output_text=(
+            '{"needs_clarification":true,'
+            '"questions":[{'
+            '"key":"gift_amount",'
+            '"data_type":"integer",'
+            '"question":"증여금액은 얼마인가요?",'
+            '"reason":"세액 계산에 필요",'
+            '"required":true}],'
+            '"known_facts":[{'
+            '"key":"gift_amount",'
+            '"value":"6000만원"}],'
+            '"reason":"금액을 확인했습니다."}'
+        )
+    )
+    service = ClarificationService(
+        client=SimpleNamespace(
+            responses=SimpleNamespace(
+                create=lambda **kwargs: response
+            )
+        ),
+        model="test-model",
+    )
+
+    result = service.analyze(
+        question="6000만원을 증여하려고 합니다.",
+        context="",
+        facts={"gift_amount": None},
+        intent="assessment",
+        requires_calculation=True,
+    )
+
+    assert result.needs_clarification is False
+    assert result.questions == []
 
 
 def test_openai_clients_use_separate_api_keys(monkeypatch) -> None:

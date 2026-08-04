@@ -2,11 +2,41 @@ from openai import OpenAI
 
 from app.core.constants import CLARIFICATION_FACT_DATA_TYPES
 from app.schemas.chat import ClarificationResult
+from app.services.fact_normalization_service import (
+    is_unknown_value,
+    means_no_previous_gifts,
+)
 from app.prompts.clarification import (
     CLARIFICATION_SYSTEM_PROMPT,
     CLARIFICATION_SCHEMA,
     build_clarification_prompt,
     )
+
+PREVIOUS_GIFT_DETAIL_KEYS = {
+    "previous_gift_amount",
+    "previous_gift_date",
+    "previous_gift_same_donor",
+}
+
+
+def is_fact_satisfied(
+    key: str,
+    facts: dict,
+) -> bool:
+    if (
+        key in PREVIOUS_GIFT_DETAIL_KEYS
+        and means_no_previous_gifts(
+            facts.get("has_previous_gifts")
+        )
+    ):
+        return True
+
+    return (
+        key in facts
+        and not is_unknown_value(facts.get(key))
+    )
+
+
 class ClarificationService:
     def __init__(
         self,
@@ -65,17 +95,50 @@ class ClarificationService:
         )
     
         if result.needs_clarification:
-            result.questions = result.questions[:3]
+            effective_facts = dict(facts)
+
+            for known_fact in result.known_facts:
+                current_value = effective_facts.get(
+                    known_fact.key
+                )
+                if (
+                    known_fact.key not in effective_facts
+                    or is_unknown_value(current_value)
+                ):
+                    effective_facts[
+                        known_fact.key
+                    ] = known_fact.value
+
+            filtered_questions = []
+            seen_keys = set()
 
             for clarification_question in result.questions:
+                if clarification_question.key in seen_keys:
+                    continue
+
+                if is_fact_satisfied(
+                    clarification_question.key,
+                    effective_facts,
+                ):
+                    continue
+
                 clarification_question.data_type = (
                     CLARIFICATION_FACT_DATA_TYPES[
                         clarification_question.key
                     ]
                 )
-    
-            if not result.questions:
-                result.needs_clarification = False
+                filtered_questions.append(
+                    clarification_question
+                )
+                seen_keys.add(clarification_question.key)
+
+                if len(filtered_questions) == 3:
+                    break
+
+            result.questions = filtered_questions
+            result.needs_clarification = bool(
+                filtered_questions
+            )
     
         return result
         

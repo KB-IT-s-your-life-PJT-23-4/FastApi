@@ -8,7 +8,8 @@ from app.core.constants import (
 from app.schemas.chat import(
     ClarificationRequest,
     ChatRequest,
-    ChatResponse
+    ChatResponse,
+    KnownFact,
 )
 from app.schemas.family import FamilyData
 from app.services.answer_service import AnswerService
@@ -20,8 +21,22 @@ from app.services.intent_service import (
 )
 from app.services.retrieval_service import RetrievalService
 from app.services.fact_normalization_service import (
+    is_unknown_value,
     normalize_calculation_facts,
 )
+
+
+def merge_known_facts(
+    facts: dict,
+    known_facts: list[KnownFact],
+) -> None:
+    for known_fact in known_facts:
+        current_value = facts.get(known_fact.key)
+        if (
+            known_fact.key not in facts
+            or is_unknown_value(current_value)
+        ):
+            facts[known_fact.key] = known_fact.value
 
 class ChatService:
     def __init__(
@@ -156,10 +171,14 @@ class ChatService:
             )
         )
 
-        for known_fact in clarification.known_facts:
-            facts.setdefault(
-                known_fact.key,
-                known_fact.value,
+        merge_known_facts(
+            facts,
+            clarification.known_facts,
+        )
+        if intent in {"family", "assessment"}:
+            facts = normalize_calculation_facts(
+                facts,
+                question=question,
             )
 
         if clarification.needs_clarification:
@@ -267,8 +286,15 @@ class ChatService:
             requires_calculation=requires_calculation,
         )
 
-        for known_fact in clarification.known_facts:
-            facts.setdefault(known_fact.key, known_fact.value)
+        merge_known_facts(
+            facts,
+            clarification.known_facts,
+        )
+        if intent in {"family", "assessment"}:
+            facts = normalize_calculation_facts(
+                facts,
+                question=request.question,
+            )
 
         if clarification.needs_clarification:
             return ChatResponse(
