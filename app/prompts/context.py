@@ -102,6 +102,28 @@ def build_calculation_error_context() -> str:
 """.strip()
 
 
+def build_gift_tax_calculation_context(
+    calculation: dict[str, int | bool],
+) -> str:
+    return f"""
+[서버 계산 완료 결과]
+다음 값은 서버가 원 단위 정수로 정규화한 뒤 세율표를 적용해 계산한 결과입니다.
+LLM이 금액, 공제액, 과세표준, 세율 또는 산출세액을 다시 계산하거나 변경하지 마세요.
+
+{json.dumps(
+    calculation,
+    ensure_ascii=False,
+    indent=2,
+)}
+
+답변 계산식:
+- 합산 증여금액 = 현재 증여금액 + 과거 합산 증여금액
+- 과세표준 = 합산 증여금액 - 적용 공제액
+- 간이 산출세액 = 과세표준 × 적용 세율 - 누진공제액
+- 위 서버 계산값을 그대로 설명하고, 결과는 간이 추정액으로 표현하세요.
+""".strip()
+
+
 def combine_contexts(
     *contexts: str,
 ) -> str:
