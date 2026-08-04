@@ -1,5 +1,6 @@
-from typing import Any
 import re
+from decimal import Decimal
+from typing import Any
 from app.core.constants import FACT_KEY_ALIASES
 
 UNKNOWN_VALUES = {
@@ -208,6 +209,9 @@ def parse_korean_amount(
     if value is None:
         return None
 
+    if isinstance(value, bool):
+        return None
+
     if isinstance(value, int):
         return value
 
@@ -233,7 +237,7 @@ def parse_korean_amount(
     if not match:
         return None
 
-    number = float(match.group(1))
+    number = Decimal(match.group(1))
     unit = match.group(2) or "원"
 
     multiplier = {

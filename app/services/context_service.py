@@ -11,9 +11,11 @@ from app.data.gift_tax_rules import (
     GIFT_TAX_RATE_TABLE
 )
 from app.prompts.context import(
+    build_calculation_error_context,
     build_calculation_failure_context,
     build_family_context,
     build_families_context,
+    build_gift_tax_calculation_context,
     build_gift_tax_rule_context,
     build_product_context,
     combine_contexts
@@ -23,6 +25,7 @@ from app.services.fact_normalization_service import (
     normalize_calculation_facts,
     validate_estimate_facts,
 )
+from app.services.gift_tax_service import create_tax_estimate_from_facts
 
 class ContextService:
     """
@@ -208,6 +211,7 @@ class ContextService:
         }
 
         gift_tax_rule_context = ""
+        gift_tax_calculation_context = ""
         calculation_notice = ""
 
         should_calculate = (
@@ -247,10 +251,25 @@ class ContextService:
                         ),
                     )
                 )
+                try:
+                    estimate = create_tax_estimate_from_facts(
+                        normalized_facts
+                    )
+                except (TypeError, ValueError, RuntimeError):
+                    estimate = None
+                if estimate is None:
+                    calculation_notice = build_calculation_error_context()
+                else:
+                    calculation = estimate.to_dict()
+                    normalized_facts["tax_calculation"] = calculation
+                    gift_tax_calculation_context = (
+                        build_gift_tax_calculation_context(calculation)
+                    )
 
         final_context = self.combine(
             base_context,
             gift_tax_rule_context,
+            gift_tax_calculation_context,
             calculation_notice,
         )
 

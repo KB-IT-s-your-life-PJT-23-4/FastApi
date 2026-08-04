@@ -180,6 +180,29 @@ other_gift, other, jailbreak
 `requires_calculation`은 완료 여부가 아니다. 완료 여부는 항상 `status`로
 판단한다.
 
+계산이 완료된 `family`, `assessment` 응답의 `facts`에는 FastAPI가 직접
+계산한 `tax_calculation`이 포함된다. `6000만원`, `1억`, `1.5억` 같은
+금액 표현도 각각 `60000000`, `100000000`, `150000000`의 원 단위
+정수로 정규화된다.
+
+```json
+{
+  "tax_calculation": {
+    "gift_amount": 60000000,
+    "previous_gift_amount": 0,
+    "total_gift_amount": 60000000,
+    "deduction_limit": 50000000,
+    "previously_used_deduction": 0,
+    "applied_deduction": 50000000,
+    "taxable_base": 10000000,
+    "tax_rate_percent": 10,
+    "progressive_deduction": 0,
+    "estimated_calculated_tax": 1000000,
+    "is_estimate": true
+  }
+}
+```
+
 ## 5. 시나리오 A: 등록 가족 정보로 바로 답변 완료
 
 등록 가족 이름이 유일하게 매칭되고 계산 필수 정보가 모두 들어 있으면

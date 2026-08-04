@@ -31,6 +31,11 @@ from app.services.context_service import ContextService
 from app.services.fact_normalization_service import (
     extract_calculation_facts_from_question,
     normalize_calculation_facts,
+    parse_korean_amount,
+)
+from app.services.gift_tax_service import (
+    apply_gift_tax_rate,
+    calculate_simple_gift_tax,
 )
 from app.services.retrieval_service import (
     RetrievalService,
@@ -605,6 +610,113 @@ def test_question_facts_override_confirmation_answers() -> None:
     assert facts["relationship_type"] == (
         "parent_to_adult_child"
     )
+
+
+@pytest.mark.parametrize(
+    ("raw_amount", "expected"),
+    [
+        ("6000만원", 60_000_000),
+        ("1억", 100_000_000),
+        ("1억원", 100_000_000),
+        ("1.5억", 150_000_000),
+        ("60,000,000원", 60_000_000),
+        (60_000_000, 60_000_000),
+    ],
+)
+def test_korean_amount_is_normalized_to_integer_won(
+    raw_amount,
+    expected,
+) -> None:
+    normalized = parse_korean_amount(raw_amount)
+
+    assert normalized == expected
+    assert type(normalized) is int
+
+
+def test_gift_tax_is_calculated_by_server() -> None:
+    estimate = calculate_simple_gift_tax(
+        gift_amount=60_000_000,
+        relationship_type="parent_to_adult_child",
+    )
+
+    assert estimate.total_gift_amount == 60_000_000
+    assert estimate.applied_deduction == 50_000_000
+    assert estimate.taxable_base == 10_000_000
+    assert estimate.tax_rate_percent == 10
+    assert estimate.progressive_deduction == 0
+    assert estimate.estimated_calculated_tax == 1_000_000
+
+
+def test_previous_gift_uses_full_deduction_once_for_combined_base() -> None:
+    estimate = calculate_simple_gift_tax(
+        gift_amount=60_000_000,
+        relationship_type="parent_to_adult_child",
+        previous_gift_amount=15_000_000,
+        previously_used_deduction=15_000_000,
+    )
+
+    assert estimate.total_gift_amount == 75_000_000
+    assert estimate.deduction_limit == 50_000_000
+    assert estimate.applied_deduction == 50_000_000
+    assert estimate.taxable_base == 25_000_000
+    assert estimate.tax_rate_percent == 10
+    assert estimate.estimated_calculated_tax == 2_500_000
+
+
+def test_gift_tax_calculation_process_is_logged(caplog) -> None:
+    caplog.set_level("INFO", logger="uvicorn.error")
+
+    calculate_simple_gift_tax(
+        gift_amount=60_000_000,
+        relationship_type="parent_to_adult_child",
+    )
+
+    messages = [record.getMessage() for record in caplog.records]
+    assert any("gift_tax.calculation_started" in message for message in messages)
+    assert any("gift_tax.deduction_applied" in message for message in messages)
+    assert any(
+        "gift_tax.taxable_base_calculated" in message
+        for message in messages
+    )
+    assert any("gift_tax.rate_selected" in message for message in messages)
+    assert any(
+        "gift_tax.calculation_completed" in message
+        and "estimated_calculated_tax=1000000" in message
+        for message in messages
+    )
+
+
+def test_progressive_tax_rate_is_selected_by_taxable_base() -> None:
+    rate, progressive_deduction, calculated_tax = apply_gift_tax_rate(
+        500_000_000
+    )
+
+    assert rate == 20
+    assert progressive_deduction == 10_000_000
+    assert calculated_tax == 90_000_000
+
+
+def test_final_context_contains_precalculated_integer_tax_values() -> None:
+    context, facts = ContextService().build_final_context(
+        base_context="",
+        facts={
+            "gift_amount": "6000만원",
+            "relationship_type": "parent_to_adult_child",
+            "has_previous_gifts": False,
+            "previously_used_deduction": 0,
+        },
+        question="성인 아들에게 6000만원을 증여하면 얼마인가요?",
+        intent="assessment",
+        requires_calculation=True,
+    )
+
+    calculation = facts["tax_calculation"]
+    assert calculation["gift_amount"] == 60_000_000
+    assert type(calculation["gift_amount"]) is int
+    assert calculation["tax_rate_percent"] == 10
+    assert calculation["estimated_calculated_tax"] == 1_000_000
+    assert "[서버 계산 완료 결과]" in context
+    assert "LLM이 금액, 공제액, 과세표준, 세율 또는 산출세액을" in context
 
 
 def test_adult_child_deduction_is_explicit_in_context() -> None:
