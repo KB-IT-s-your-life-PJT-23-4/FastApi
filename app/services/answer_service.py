@@ -114,6 +114,12 @@ class AnswerService:
         structured_answer = StructuredAnswer.model_validate_json(
             response.output_text
         )
+        if intent in {"product", "procedure"}:
+            structured_answer = structured_answer.model_copy(
+                update={
+                    "sources": [],
+                }
+            )
         answer = render_plain_text_answer(structured_answer)
         if not answer:
             raise RuntimeError("최종 답변이 비어 있습니다.")
