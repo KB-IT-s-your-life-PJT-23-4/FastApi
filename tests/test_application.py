@@ -583,6 +583,42 @@ def test_answer_service_uses_structured_output() -> None:
     )
 
 
+@pytest.mark.parametrize(
+    "intent",
+    ["product", "procedure"],
+)
+def test_answer_service_removes_sources_for_non_legal_intents(
+    intent,
+) -> None:
+    def create_response(**kwargs):
+        return SimpleNamespace(
+            output_text=(
+                '{"summary":"안내 답변입니다.",'
+                '"sections":[],"sources":'
+                '["상속세 및 증여세법 제1조"],'
+                '"notice":null}'
+            )
+        )
+
+    service = AnswerService(
+        client=SimpleNamespace(
+            responses=SimpleNamespace(create=create_response)
+        ),
+        model="test-model",
+    )
+
+    answer = service.generate(
+        question="안내해 주세요.",
+        context="참고 자료",
+        facts={},
+        intent=intent,
+    )
+
+    assert answer == "안내 답변입니다."
+    assert "근거" not in answer
+    assert "제1조" not in answer
+
+
 def test_question_facts_override_confirmation_answers() -> None:
     question = (
         "부모가 22세 성년 자녀에게 "
