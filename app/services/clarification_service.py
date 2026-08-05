@@ -4,6 +4,7 @@ from app.core.constants import CLARIFICATION_FACT_DATA_TYPES
 from app.schemas.chat import ClarificationResult
 from app.services.fact_normalization_service import (
     is_unknown_value,
+    means_has_previous_gifts,
     means_no_previous_gifts,
 )
 from app.prompts.clarification import (
@@ -16,6 +17,19 @@ PREVIOUS_GIFT_DETAIL_KEYS = {
     "previous_gift_amount",
     "previous_gift_date",
     "previous_gift_same_donor",
+}
+
+CLARIFICATION_FACT_PRIORITY = {
+    "recipient_age": 0,
+    "has_previous_gifts": 1,
+    "previous_gift_amount": 2,
+    "previous_gift_date": 3,
+    "previous_gift_same_donor": 4,
+    "gift_amount": 5,
+    "relationship_type": 6,
+    "recipient_is_minor": 7,
+    "recipient_name": 8,
+    "gift_date": 9,
 }
 
 
@@ -116,6 +130,15 @@ class ClarificationService:
                 if clarification_question.key in seen_keys:
                     continue
 
+                if (
+                    clarification_question.key
+                    in PREVIOUS_GIFT_DETAIL_KEYS
+                    and not means_has_previous_gifts(
+                        effective_facts.get("has_previous_gifts")
+                    )
+                ):
+                    continue
+
                 if is_fact_satisfied(
                     clarification_question.key,
                     effective_facts,
@@ -132,12 +155,18 @@ class ClarificationService:
                 )
                 seen_keys.add(clarification_question.key)
 
-                if len(filtered_questions) == 3:
-                    break
+            filtered_questions.sort(
+                key=lambda question: (
+                    CLARIFICATION_FACT_PRIORITY.get(
+                        question.key,
+                        100,
+                    )
+                )
+            )
 
-            result.questions = filtered_questions
+            result.questions = filtered_questions[:3]
             result.needs_clarification = bool(
-                filtered_questions
+                result.questions
             )
     
         return result

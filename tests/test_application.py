@@ -413,6 +413,95 @@ def test_duplicate_clarification_keys_are_removed() -> None:
     assert result.questions[0].data_type == "boolean"
 
 
+def test_clarification_questions_prioritize_age_and_previous_gifts() -> None:
+    response = SimpleNamespace(
+        output_text=(
+            '{"needs_clarification":true,'
+            '"questions":['
+            '{"key":"gift_amount","data_type":"integer",'
+            '"question":"증여금액은 얼마인가요?",'
+            '"reason":"계산 금액 확인","required":true},'
+            '{"key":"relationship_type","data_type":"string",'
+            '"question":"관계는 무엇인가요?",'
+            '"reason":"공제 확인","required":true},'
+            '{"key":"previous_gift_amount","data_type":"integer",'
+            '"question":"이전 증여금액은 얼마인가요?",'
+            '"reason":"합산 금액 확인","required":true},'
+            '{"key":"recipient_age","data_type":"integer",'
+            '"question":"수증자의 나이는 몇 살인가요?",'
+            '"reason":"공제 확인","required":true},'
+            '{"key":"previous_gift_date","data_type":"date",'
+            '"question":"이전 증여일은 언제인가요?",'
+            '"reason":"합산 기간 확인","required":true}],'
+            '"known_facts":[],'
+            '"reason":"추가 정보가 필요합니다."}'
+        )
+    )
+    service = ClarificationService(
+        client=SimpleNamespace(
+            responses=SimpleNamespace(
+                create=lambda **kwargs: response
+            )
+        ),
+        model="test-model",
+    )
+
+    result = service.analyze(
+        question="증여세를 계산해 주세요.",
+        context="",
+        facts={"has_previous_gifts": True},
+        intent="assessment",
+        requires_calculation=True,
+    )
+
+    assert [question.key for question in result.questions] == [
+        "recipient_age",
+        "previous_gift_amount",
+        "previous_gift_date",
+    ]
+
+
+def test_previous_gift_details_wait_for_previous_gift_confirmation() -> None:
+    response = SimpleNamespace(
+        output_text=(
+            '{"needs_clarification":true,'
+            '"questions":['
+            '{"key":"previous_gift_amount","data_type":"integer",'
+            '"question":"이전 증여금액은 얼마인가요?",'
+            '"reason":"합산 금액 확인","required":true},'
+            '{"key":"has_previous_gifts","data_type":"boolean",'
+            '"question":"이전 증여가 있었나요?",'
+            '"reason":"합산 여부 확인","required":true},'
+            '{"key":"recipient_age","data_type":"integer",'
+            '"question":"수증자의 나이는 몇 살인가요?",'
+            '"reason":"공제 확인","required":true}],'
+            '"known_facts":[],'
+            '"reason":"추가 정보가 필요합니다."}'
+        )
+    )
+    service = ClarificationService(
+        client=SimpleNamespace(
+            responses=SimpleNamespace(
+                create=lambda **kwargs: response
+            )
+        ),
+        model="test-model",
+    )
+
+    result = service.analyze(
+        question="증여세를 계산해 주세요.",
+        context="",
+        facts={},
+        intent="assessment",
+        requires_calculation=True,
+    )
+
+    assert [question.key for question in result.questions] == [
+        "recipient_age",
+        "has_previous_gifts",
+    ]
+
+
 def test_known_fact_replaces_unknown_but_not_valid_false() -> None:
     facts = {
         "gift_amount": None,
