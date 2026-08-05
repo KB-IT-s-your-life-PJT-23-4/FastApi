@@ -25,7 +25,9 @@ class ChatRequest(BaseModel):
         default_factory=list,
         max_length=3,
     )
-    product: ProductData | None = None
+    products: list[ProductData] = Field(
+        default_factory=list,
+    )
     facts: dict[str, Any] = Field(default_factory=dict)
 
 class ClarificationQuestion(BaseModel):
@@ -64,7 +66,9 @@ class ClarificationRequest(BaseModel):
         default_factory=list,
         max_length=3,
     )
-    product: ProductData | None = None
+    products: list[ProductData] = Field(
+        default_factory=list,
+    )
 
 QuestionIntent = Literal[
     "concept",
