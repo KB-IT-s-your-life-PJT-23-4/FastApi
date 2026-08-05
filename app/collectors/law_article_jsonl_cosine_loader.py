@@ -311,6 +311,8 @@ def build_metadata(
     *,
     tax_scope: str,
     chunk_index: int,
+    embedding_hash: str,
+    metadata_hash: str,
 ) -> dict[str, str | int | float | bool]:
     metadata = {
         **original,
@@ -335,6 +337,10 @@ def build_metadata(
             "https://www.law.go.kr/법령/"
             f"{quote(str(original.get('law_name') or ''))}"
         ),
+
+        # 변경 감지용
+        "source_embedding_hash": embedding_hash,
+        "source_metadata_hash": metadata_hash
     }
 
     return sanitize_metadata(metadata)
@@ -349,6 +355,11 @@ def create_chunks(
         source_id = record["id"]
         original_text = record["text"]
         original_metadata = record["metadata"]
+
+        (
+            embedding_hash,
+            metadata_hash
+        ) = make_source_hashes(record)
 
         tax_scope = classify_tax_scope(
             original_text
@@ -373,12 +384,17 @@ def create_chunks(
                     chunk_index,
                     document,
                 ),
+                "source_id": source_id,
+                "embedding_hash": embedding_hash,
+                "metadata_hash": metadata_hash,
                 "document": document,
                 "metadata": build_metadata(
                     source_id,
                     original_metadata,
                     tax_scope=tax_scope,
                     chunk_index=chunk_index,
+                    embedding_hash=embedding_hash,
+                    metadata_hash=metadata_hash
                 ),
             })
 
@@ -432,6 +448,23 @@ def reset_cosine_collection(
     )
 
     return collection
+
+def get_cosine_collection(
+    chroma_client,
+):
+    return chroma_client.get_or_create_collection(
+        name = LAW_COLLECTION_NAME,
+        configuration={
+            "hnsw": {
+                "space":"cosine"
+            }
+        },
+        metadata={
+            "description": "law_article.jsonl 기반 세법 데이터",
+            "distance_metric": "cosine",
+            "embedding_model": OPENAI_EMBEDDING_MODEL,
+        },
+    )
 
 def embed_and_store(
     collection: chromadb.Collection,
@@ -488,6 +521,48 @@ def embed_and_store(
             total,
         )
 
+# 변경 감지용 해시
+def make_hash(
+    value: Any,
+) -> str:
+    serialized = json.dumps(
+        value,
+        ensure_ascii=False,
+        sort_keys=True,
+        default=str,
+    )
+
+    return hashlib.sha256(
+        serialized.encode("utf-8")
+    ).hexdigest()
+
+
+def make_source_hashes(
+    record: dict[str, Any],
+) -> tuple[str, str]:
+    metadata = record["metadata"]
+
+    #이 값이 달라질 경우 임베딩 문자열 변경
+    embedding_payload = {
+        "text": record["text"],
+        "law_name": metadata.get("law_name"),
+        "article_no": metadata.get("article_no"),
+        "title": metadata.get("title"),
+
+        #모델이나 청킹 기준 변경 시 전체 재임베딩
+        "embedding_model": OPENAI_EMBEDDING_MODEL,
+        "chunk_max_chars": CHUNK_MAX_CHARS,
+        "chunk_overlap_chars": CHUNK_OVERLAP_CHARS,
+        "chunk_version": 1,
+    }
+
+    metadata_payload = metadata
+
+    return (
+        make_hash(embedding_payload),
+        make_hash(metadata_payload)
+    )
+
 def main() -> None:
     # JSONL을 먼저 검증한 다음 기존 컬렉션을 삭제한다.
     records = load_jsonl(
@@ -530,5 +605,204 @@ def main() -> None:
     )
 
 
+def load_existing_state(
+    collection,
+) -> dict[str, dict[str, Any]]:
+    result = collection.get(
+        include=["metadatas"]
+    )
+
+    state: dict[str, dict[str, Any]] = {}
+
+    for chunk_id, metadata in zip(
+        result.get("ids") or [],
+        result.get("metadatas") or [],
+    ):
+        metadata = metadata or {}
+
+        source_id = str(
+            metadata.get("source_id") or ""
+        )
+
+        if not source_id:
+            continue
+
+        if source_id not in state:
+            state[source_id] = {
+                "chunk_ids": [],
+                "embedding_hash": metadata.get(
+                    "source_embedding_hash",
+                    "",
+                ),
+                "metadata_hash": metadata.get(
+                    "source_metadata_hash",
+                    "",
+                ),
+            }
+
+        state[source_id]["chunk_ids"].append(
+            chunk_id
+        )
+
+    return state
+
+def incremental_sync() -> None:
+    records = load_jsonl(
+        LAW_JSONL_PATH
+    )
+
+    chroma_client = chromadb.PersistentClient(
+        path=CHROMA_PATH
+    )
+
+    collection = get_cosine_collection(
+        chroma_client
+    )
+
+    existing_state = load_existing_state(
+        collection
+    )
+
+    current_source_ids = {
+        record["id"]
+        for record in records
+    }
+
+    chunks_to_embed: list[dict[str, Any]] = []
+    stale_chunk_ids: list[str] = []
+
+    new_count = 0
+    changed_count = 0
+    metadata_updated_count = 0
+    unchanged_count = 0
+    deleted_count = 0
+
+    for record in records:
+        source_id = record["id"]
+
+        new_chunks = create_chunks(
+            [record]
+        )
+
+        if not new_chunks:
+            continue
+
+        new_embedding_hash = new_chunks[0][
+            "embedding_hash"
+        ]
+        new_metadata_hash = new_chunks[0][
+            "metadata_hash"
+        ]
+
+        new_chunk_ids = {
+            chunk["id"]
+            for chunk in new_chunks
+        }
+
+        previous = existing_state.get(
+            source_id
+        )
+
+        # 새 조문
+        if previous is None:
+            chunks_to_embed.extend(
+                new_chunks
+            )
+            new_count += 1
+            continue
+
+        old_chunk_ids = set(
+            previous["chunk_ids"]
+        )
+
+        embedding_changed = (
+            previous["embedding_hash"]
+            != new_embedding_hash
+        )
+
+        chunk_structure_changed = (
+            old_chunk_ids != new_chunk_ids
+        )
+
+        metadata_changed = (
+            previous["metadata_hash"]
+            != new_metadata_hash
+        )
+
+        # 본문, 제목, 청킹 기준 또는 모델이 변경된 경우
+        if embedding_changed or chunk_structure_changed:
+            chunks_to_embed.extend(
+                new_chunks
+            )
+
+            # 새 벡터 저장이 완료된 후 삭제할 이전 청크
+            stale_chunk_ids.extend(
+                old_chunk_ids - new_chunk_ids
+            )
+
+            changed_count += 1
+            continue
+
+        # metadata만 변경된 경우 OpenAI 호출 없이 갱신
+        if metadata_changed:
+            collection.update(
+                ids=[
+                    chunk["id"]
+                    for chunk in new_chunks
+                ],
+                metadatas=[
+                    chunk["metadata"]
+                    for chunk in new_chunks
+                ],
+            )
+
+            metadata_updated_count += 1
+            continue
+
+        unchanged_count += 1
+
+    # 새로운 조문과 본문 변경 조문만 임베딩
+    if chunks_to_embed:
+        embed_and_store(
+            collection,
+            chunks_to_embed,
+        )
+
+    # 새 벡터 저장 성공 후 더 이상 사용하지 않는 과거 청크 삭제
+    if stale_chunk_ids:
+        collection.delete(
+            ids=list(set(stale_chunk_ids))
+        )
+
+    # JSONL에서 삭제된 조문 처리
+    deleted_source_ids = (
+        set(existing_state)
+        - current_source_ids
+    )
+
+    for source_id in deleted_source_ids:
+        collection.delete(
+            ids=existing_state[source_id][
+                "chunk_ids"
+            ]
+        )
+        deleted_count += 1
+
+    logger.info(
+        "법령 증분 동기화 완료 "
+        "new=%d changed=%d "
+        "metadata_updated=%d unchanged=%d "
+        "deleted=%d embedded_chunks=%d "
+        "collection_count=%d",
+        new_count,
+        changed_count,
+        metadata_updated_count,
+        unchanged_count,
+        deleted_count,
+        len(chunks_to_embed),
+        collection.count(),
+    )
+
+
 if __name__ == "__main__":
-    main()
+    incremental_sync()
