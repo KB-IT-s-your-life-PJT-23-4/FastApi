@@ -97,7 +97,7 @@ class ChatService:
                 )
             )
 
-        if intent == "product" and request.product is None:
+        if intent == "product" and not request.products:
             return ChatResponse(
                 conversation_id=conversation_id,
                 status="COMPLETED",
@@ -139,12 +139,10 @@ class ChatService:
                 )
             )
 
-        if request.product is not None and intent == "product":
+        if request.products and intent == "product":
             product_context = (
-                self.context_service.build_product_context(
-                    request.product.model_dump(
-                        mode="json"
-                    )
+                self.context_service.build_products_context(
+                    request.products
                 )
             )
 
@@ -260,10 +258,10 @@ class ChatService:
                 )
             )
 
-        if request.product is not None and intent == "product":
+        if request.products and intent == "product":
             product_context = (
-                self.context_service.build_product_context(
-                    request.product
+                self.context_service.build_products_context(
+                    request.products
                 )
             )
 
@@ -359,3 +357,4 @@ class ChatService:
         )
         family_facts["recipient_name"] = selected_family.name
         return family_facts
+        
