@@ -5,7 +5,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.schemas.family import FamilyData
-from app.schemas.product import ProductData
+from app.schemas.product import ProductData, EtfProductData
 
 ChatStatus = Literal[
     "COMPLETED",
@@ -26,6 +26,9 @@ class ChatRequest(BaseModel):
         max_length=3,
     )
     products: list[ProductData] = Field(
+        default_factory=list,
+    )
+    etf_products: list[EtfProductData] = Field(
         default_factory=list,
     )
     facts: dict[str, Any] = Field(default_factory=dict)
@@ -67,6 +70,9 @@ class ClarificationRequest(BaseModel):
         max_length=3,
     )
     products: list[ProductData] = Field(
+        default_factory=list,
+    )
+    etf_products: list[EtfProductData] = Field(
         default_factory=list,
     )
 

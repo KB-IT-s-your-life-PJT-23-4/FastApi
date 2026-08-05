@@ -20,7 +20,7 @@ from app.prompts.context import(
     build_product_context,
     combine_contexts
 )
-from app.schemas.product import ProductData
+from app.schemas.product import ProductData, EtfProductData
 from app.services.fact_normalization_service import (
     normalize_calculation_facts,
     validate_estimate_facts,
@@ -133,6 +133,36 @@ class ContextService:
 
 {context}
 """.strip()
+            )
+
+        return self.combine(*contexts)
+
+    def build_etf_products_context(
+        self,
+        etf_products: list[EtfProductData] | None,
+    ) -> str:
+        """
+        여러 ETF 상품을 하나의 Context로 조립한다.
+        """
+        if not etf_products:
+            return ""
+
+        contexts: list[str] = []
+
+        for index, etf_product in enumerate(etf_products, start=1):
+            etf_dict = etf_product.model_dump(mode="json")
+
+            context = build_product_context(etf_dict)
+
+            if not context.strip():
+                continue
+
+            contexts.append(
+                f"""
+    ===== 선택 ETF {index} =====
+
+    {context}
+    """.strip()
             )
 
         return self.combine(*contexts)

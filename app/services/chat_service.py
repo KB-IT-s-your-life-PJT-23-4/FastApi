@@ -97,7 +97,7 @@ class ChatService:
                 )
             )
 
-        if intent == "product" and not request.products:
+        if intent == "product" and not request.products and not request.etf_products:
             return ChatResponse(
                 conversation_id=conversation_id,
                 status="COMPLETED",
@@ -123,10 +123,11 @@ class ChatService:
                 facts,
                 question=question,
             )
-        
+
         family_context = ""
         product_context = ""
         rag_context = ""
+        etf_context = ""
 
         if request.families:
             families_data = [
@@ -146,6 +147,13 @@ class ChatService:
                 )
             )
 
+        if request.etf_products and intent == "product":
+            etf_context = (
+                self.context_service.build_etf_products_context(
+                    request.etf_products
+                )
+            )
+
         if intent in RAG_INTENTS:
             rag_context = self.retrieval_service.retrieve(
                 question
@@ -155,6 +163,7 @@ class ChatService:
             family_context,
             product_context,
             rag_context,
+            etf_context
         )
 
         clarification = (
@@ -246,6 +255,7 @@ class ChatService:
         family_context = ""
         product_context = ""
         rag_context = ""
+        etf_context = ""
 
         if request.families:
             families_data = [
@@ -264,6 +274,12 @@ class ChatService:
                     request.products
                 )
             )
+        if request.etf_products and intent == "product":
+            etf_context = (
+                self.context_service.build_etf_products_context(
+                    request.etf_products
+                )
+            )
 
         if intent in RAG_INTENTS:
             rag_context = self.retrieval_service.retrieve(
@@ -274,6 +290,7 @@ class ChatService:
             family_context,
             product_context,
             rag_context,
+            etf_context
         )
         requires_calculation = request.requires_calculation
         clarification = self.clarification_service.analyze(
