@@ -13,7 +13,7 @@ class ProductSchema(BaseModel):
 
 
 class ProductData(ProductSchema):
-    """AI 상담 요청 전용 간소화 상품 정보"""
+    """예금/적금 정보"""
 
     product_name: str = Field(
         min_length=1,
@@ -31,4 +31,25 @@ class ProductData(ProductSchema):
     preferential_condition: str | None = Field(
         default=None,
         description="우대조건 설명 (여러 개면 콤마로 연결된 텍스트)",
+    )
+
+
+class EtfProductData(ProductSchema):
+    """ETF 정보"""
+
+    product_name: str = Field(
+        min_length=1,
+        max_length=200,
+    )
+
+    tracking_index: str = Field(
+        min_length=1,
+        max_length=200,
+        description="추종 지수",
+    )
+
+    annual_return_5y: Decimal = Field(
+        max_digits=8,
+        decimal_places=4,
+        description="5년 연평균 수익률(%)",
     )
