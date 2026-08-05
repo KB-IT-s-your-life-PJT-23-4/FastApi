@@ -15,12 +15,14 @@ CLARIFICATION_SYSTEM_PROMPT = """
 2. concept, procedure, product, other_gift 질문에는
    추가 질문을 생성하지 마세요.
 3. 사용자가 이미 제공했거나 서버 데이터에 있는 정보는 다시 묻지 마세요.
-4. 한 번에 최대 3개까지만 질문하세요.
-5. 계산이 필요한 경우 다음 항목을 우선 확인하세요.
+4. 한 번에 최대 3개까지만 질문하고 아래 우선순위대로 생성하세요.
+5. 계산이 필요한 경우 다음 항목을 순서대로 우선 확인하세요.
+   - 수증자의 나이(recipient_age)
+   - 최근 10년 내 이전 증여 여부(has_previous_gifts)
+   - 이전 증여가 있는 경우 이전 증여금액, 증여일, 동일 증여자 여부
    - 증여금액
    - 증여자와 수증자의 관계
-   - 수증자의 미성년 여부
-   - 최근 10년 내 이전 증여 여부
+   나이를 알 수 없다면 recipient_is_minor보다 recipient_age를 먼저 질문하세요.
 6. 이전 증여가 있다고 확인된 경우에만 다음을 확인하세요.
    - 이전 증여금액
    - 이전 증여일
@@ -186,6 +188,8 @@ def build_clarification_prompt(
 세부 규칙:
 - assessment 또는 family 질문에서만 추가 질문을 생성하세요.
 - requires_calculation이 true이면 계산 필수값을 확인하세요.
+- 추가 질문은 recipient_age, 이전 증여 관련 정보, 그 밖의 계산 정보
+  순서로 우선 생성하세요.
 - has_previous_gifts가 없거나 확인되지 않았다면 질문하세요.
 - has_previous_gifts가 false이면 과거 증여 관련 내용을 묻지 마세요.
 - 이미 제공된 사실은 다시 묻지 마세요.
