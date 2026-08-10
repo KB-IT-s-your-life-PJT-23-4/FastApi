@@ -1,7 +1,28 @@
+import re
+from dataclasses import dataclass
 from typing import Any
+from urllib.parse import urlencode
 
 from app.repositories.interpretation_repository import InterpretationRepository
 from app.repositories.law_repository import LawRepository
+
+
+LAW_INFO_URL = "https://www.law.go.kr/LSW/lsInfoP.do"
+ARTICLE_NUMBER_PATTERN = re.compile(r"제\d+조(?:의\d+)?")
+
+
+@dataclass(frozen=True)
+class LawReference:
+    law_name: str
+    article_no: str
+    title: str | None
+    url: str
+
+
+@dataclass(frozen=True)
+class RetrievalResult:
+    context: str
+    references: list[LawReference]
 
 
 class RetrievalService:
@@ -23,6 +44,12 @@ class RetrievalService:
         self,
         question: str,
     ) -> str:
+        return self.retrieve_result(question).context
+
+    def retrieve_result(
+        self,
+        question: str,
+    ) -> RetrievalResult:
         interpretation_result = (
             self.interpretation_repository.search(
                 question=question,
@@ -47,7 +74,7 @@ class RetrievalService:
 
         law_contexts = format_law_context(grouped_law_result)
 
-        return "\n\n".join(
+        context = "\n\n".join(
             [
                 "===== 국세청 법령해석 사례 =====",
                 *interpretation_contexts,
@@ -56,6 +83,144 @@ class RetrievalService:
                 *law_contexts,
             ]
         )
+
+        return RetrievalResult(
+            context=context,
+            references=build_law_references(grouped_law_result),
+        )
+
+    def find_references_for_citations(
+        self,
+        citations: list[str],
+        existing_references: list[LawReference] | None = None,
+    ) -> list[LawReference]:
+        """답변 근거에 적힌 조문을 메타데이터에서 직접 찾는다."""
+        article_numbers = list(dict.fromkeys(
+            article_no
+            for citation in citations
+            for article_no in ARTICLE_NUMBER_PATTERN.findall(citation)
+        ))
+        if not article_numbers:
+            return existing_references or []
+
+        metadatas = (
+            self.law_repository.find_metadatas_by_article_numbers(
+                article_numbers
+            )
+        )
+        resolved = build_law_references_from_metadatas(metadatas)
+        return merge_law_references(
+            existing_references or [],
+            resolved,
+        )
+
+
+def convert_article_no_to_jo_no(article_no: str) -> str | None:
+    """국가법령정보센터의 조문 번호 형식으로 변환한다."""
+    match = re.fullmatch(
+        r"\s*제(\d+)조(?:의(\d+))?\s*",
+        article_no,
+    )
+    if match is None:
+        return None
+
+    main_number = int(match.group(1))
+    branch_number = int(match.group(2) or 0)
+    return f"{main_number:04d}{branch_number:02d}"
+
+
+def build_law_article_url(metadata: dict[str, Any]) -> str:
+    """벡터 메타데이터로 특정 법령 조문 URL을 생성한다."""
+    mst = str(metadata.get("mst") or "").strip()
+    law_id = str(
+        metadata.get("law_code")
+        or metadata.get("law_id")
+        or ""
+    ).strip()
+    article_no = str(
+        metadata.get("article_no")
+        or metadata.get("article_label")
+        or ""
+    ).strip()
+
+    identifier_key = "lsiSeq" if mst else "lsId"
+    identifier_value = mst or law_id
+    if not identifier_value:
+        return str(metadata.get("source_url") or "")
+
+    params = {
+        identifier_key: identifier_value,
+        "urlMode": "lsInfoP",
+    }
+    jo_no = convert_article_no_to_jo_no(article_no)
+    if jo_no:
+        params["joNo"] = jo_no
+
+    return f"{LAW_INFO_URL}?{urlencode(params)}"
+
+
+def build_law_references(
+    search_result: dict[str, Any],
+) -> list[LawReference]:
+    return build_law_references_from_metadatas(
+        get_first_result_list(search_result, "metadatas")
+    )
+
+
+def build_law_references_from_metadatas(
+    metadatas: list[dict[str, Any]],
+) -> list[LawReference]:
+    references: list[LawReference] = []
+    seen_urls: set[str] = set()
+
+    for metadata in metadatas:
+        metadata = metadata or {}
+        url = build_law_article_url(metadata)
+        if not url or url in seen_urls:
+            continue
+
+        article_no = str(
+            metadata.get("article_no")
+            or metadata.get("article_label")
+            or ""
+        )
+        law_name = str(metadata.get("law_name") or "")
+        if not law_name or not article_no:
+            continue
+
+        title = (
+            metadata.get("article_title")
+            or metadata.get("title")
+            or None
+        )
+        references.append(
+            LawReference(
+                law_name=law_name,
+                article_no=article_no,
+                title=str(title) if title else None,
+                url=url,
+            )
+        )
+        seen_urls.add(url)
+
+    return references
+
+
+def merge_law_references(
+    *groups: list[LawReference],
+) -> list[LawReference]:
+    merged: list[LawReference] = []
+    seen_urls: set[str] = set()
+    for reference in (
+        reference
+        for group in groups
+        for reference in group
+    ):
+        if reference.url in seen_urls:
+            continue
+        merged.append(reference)
+        seen_urls.add(reference.url)
+    return merged
 
 def format_interpretation_context(
     search_result: dict[str, Any],
@@ -198,6 +363,9 @@ def group_law_results_by_article(
             paragraph_numbers
         )
         first_metadata["grouped_chunk_count"] = len(chunks)
+        article_url = build_law_article_url(first_metadata)
+        if article_url:
+            first_metadata["source_url"] = article_url
         combined_body = "\n\n".join(bodies)
 
         grouped_ids.append(

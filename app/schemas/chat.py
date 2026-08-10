@@ -45,6 +45,11 @@ class ClarificationQuestion(BaseModel):
     reason: str | None = None
 
 
+class AnswerSource(BaseModel):
+    citation: str
+    url: str | None = None
+
+
 class ChatResponse(BaseModel):
     conversation_id: str
     status: ChatStatus
@@ -55,6 +60,7 @@ class ChatResponse(BaseModel):
         default_factory=list
     )
     facts: dict[str, Any] = Field(default_factory=dict)
+    sources: list[AnswerSource] = Field(default_factory=list)
 
 class ClarificationRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")

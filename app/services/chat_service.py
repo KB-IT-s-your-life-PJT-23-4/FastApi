@@ -1,3 +1,5 @@
+import logging
+import re
 from uuid import uuid4
 
 from app.core.constants import (
@@ -6,6 +8,7 @@ from app.core.constants import (
     RAG_INTENTS
 )
 from app.schemas.chat import(
+    AnswerSource,
     ClarificationRequest,
     ChatRequest,
     ChatResponse,
@@ -19,11 +22,18 @@ from app.services.intent_service import (
     IntentService,
     find_matching_family_name,
 )
-from app.services.retrieval_service import RetrievalService
+from app.services.retrieval_service import (
+    LawReference,
+    RetrievalService,
+)
 from app.services.fact_normalization_service import (
     is_unknown_value,
     normalize_calculation_facts,
 )
+
+
+logger = logging.getLogger("uvicorn.error")
+ARTICLE_CITATION_PATTERN = re.compile(r"제\d+조(?:의\d+)?")
 
 
 def merge_known_facts(
@@ -37,6 +47,101 @@ def merge_known_facts(
             or is_unknown_value(current_value)
         ):
             facts[known_fact.key] = known_fact.value
+
+
+def resolve_answer_sources(
+    citations: list[str],
+    law_references: list[LawReference],
+) -> list[AnswerSource]:
+    """LLM이 실제 답변 근거로 선택한 조문에만 URL을 연결한다."""
+    sources: list[AnswerSource] = []
+    seen: set[tuple[str, str | None]] = set()
+
+    for citation in citations:
+        article_matches = [
+            reference
+            for reference in law_references
+            if re.search(
+                rf"{re.escape(reference.article_no)}(?!의\d|\d)",
+                citation,
+            )
+        ]
+        named_matches = [
+            reference
+            for reference in article_matches
+            if reference.law_name
+            and reference.law_name in citation
+        ]
+        matched_references = (
+            named_matches
+            or (
+                article_matches
+                if len(article_matches) == 1
+                else []
+            )
+        )
+
+        if not matched_references:
+            logger.warning(
+                "answer_source.url_unresolved citation=%r",
+                citation,
+            )
+            key = (citation, None)
+            if key not in seen:
+                sources.append(AnswerSource(citation=citation))
+                seen.add(key)
+            continue
+
+        for reference in matched_references:
+            resolved_citation = (
+                citation
+                if len(matched_references) == 1
+                else " ".join(filter(None, [
+                    reference.law_name,
+                    reference.article_no,
+                    reference.title,
+                ]))
+            )
+            key = (resolved_citation, reference.url)
+            if key in seen:
+                continue
+            sources.append(
+                AnswerSource(
+                    citation=resolved_citation,
+                    url=reference.url,
+                )
+            )
+            logger.info(
+                "answer_source.url_resolved citation=%r url=%s",
+                resolved_citation,
+                reference.url,
+            )
+            seen.add(key)
+
+    return sources
+
+
+def extract_citations_from_answer(answer: str) -> list[str]:
+    """최종 answer 문자열의 근거 영역에서 법령 조항을 추출한다."""
+    lines = answer.splitlines()
+    in_source_section = False
+    citations: list[str] = []
+
+    for raw_line in lines:
+        line = raw_line.strip()
+        if line == "근거":
+            in_source_section = True
+            continue
+        if in_source_section and line == "안내":
+            break
+        if not in_source_section or not line:
+            continue
+
+        citation = re.sub(r"^[•·\-*+]\s*", "", line).strip()
+        if ARTICLE_CITATION_PATTERN.search(citation):
+            citations.append(citation)
+
+    return list(dict.fromkeys(citations))
 
 class ChatService:
     def __init__(
@@ -128,6 +233,7 @@ class ChatService:
         product_context = ""
         rag_context = ""
         etf_context = ""
+        law_references: list[LawReference] = []
 
         if request.families:
             families_data = [
@@ -155,9 +261,12 @@ class ChatService:
             )
 
         if intent in RAG_INTENTS:
-            rag_context = self.retrieval_service.retrieve(
+            retrieval_result = self.retrieval_service.retrieve_result(
                 question
             )
+            rag_context = retrieval_result.context
+            if intent not in {"product", "procedure"}:
+                law_references = retrieval_result.references
 
         base_context = self.context_service.combine(
             family_context,
@@ -214,11 +323,24 @@ class ChatService:
             )
         )
 
-        answer = self.answer_service.generate(
+        generated_answer = self.answer_service.generate_result(
             question=question,
             context=final_context,
             facts=facts,
             intent=intent,
+        )
+        answer_citations = extract_citations_from_answer(
+            generated_answer.text
+        )
+        law_references = (
+            self.retrieval_service.find_references_for_citations(
+                answer_citations,
+                law_references,
+            )
+        )
+        sources = resolve_answer_sources(
+            answer_citations,
+            law_references,
         )
 
         return ChatResponse(
@@ -228,8 +350,9 @@ class ChatService:
             requires_calculation=(
                 intent_result.requires_calculation
             ),
-            answer=answer,
+            answer=generated_answer.text,
             facts=facts,
+            sources=sources,
         )
 
     def continue_after_clarification(
@@ -256,6 +379,7 @@ class ChatService:
         product_context = ""
         rag_context = ""
         etf_context = ""
+        law_references: list[LawReference] = []
 
         if request.families:
             families_data = [
@@ -282,9 +406,12 @@ class ChatService:
             )
 
         if intent in RAG_INTENTS:
-            rag_context = self.retrieval_service.retrieve(
+            retrieval_result = self.retrieval_service.retrieve_result(
                 request.question
             )
+            rag_context = retrieval_result.context
+            if intent not in {"product", "procedure"}:
+                law_references = retrieval_result.references
 
         base_context = self.context_service.combine(
             family_context,
@@ -330,11 +457,24 @@ class ChatService:
                 requires_calculation=requires_calculation,
             )
         )
-        answer = self.answer_service.generate(
+        generated_answer = self.answer_service.generate_result(
             question=request.question,
             context=final_context,
             facts=facts,
             intent=intent,
+        )
+        answer_citations = extract_citations_from_answer(
+            generated_answer.text
+        )
+        law_references = (
+            self.retrieval_service.find_references_for_citations(
+                answer_citations,
+                law_references,
+            )
+        )
+        sources = resolve_answer_sources(
+            answer_citations,
+            law_references,
         )
 
         return ChatResponse(
@@ -342,8 +482,9 @@ class ChatService:
             status="COMPLETED",
             intent=intent,
             requires_calculation=requires_calculation,
-            answer=answer,
+            answer=generated_answer.text,
             facts=facts,
+            sources=sources,
         )
 
     def _extract_selected_family_facts(
@@ -374,4 +515,3 @@ class ChatService:
         )
         family_facts["recipient_name"] = selected_family.name
         return family_facts
-        
