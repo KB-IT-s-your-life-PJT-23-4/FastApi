@@ -57,4 +57,23 @@ class LawRepository:
             ]
         )
 
+    def find_metadatas_by_article_numbers(
+        self,
+        article_numbers: list[str],
+    ) -> list[dict[str, Any]]:
+        """임베딩 검색 없이 조문 번호로 법령 메타데이터를 조회한다."""
+        unique_numbers = list(dict.fromkeys(article_numbers))
+        if not unique_numbers:
+            return []
+
+        result = self.collection.get(
+            where={
+                "article_label": {
+                    "$in": unique_numbers,
+                }
+            },
+            include=["metadatas"],
+        )
+        return result.get("metadatas") or []
+
         

@@ -1,4 +1,5 @@
 import re
+from dataclasses import dataclass
 
 from openai import OpenAI
 
@@ -8,6 +9,12 @@ from app.prompts.answer import (
     build_final_answer_prompt
 )
 from app.schemas.answer import StructuredAnswer
+
+
+@dataclass(frozen=True)
+class GeneratedAnswer:
+    text: str
+    sources: list[str]
 
 
 def strip_markdown(text: str) -> str:
@@ -87,6 +94,21 @@ class AnswerService:
         facts: dict,
         intent: str,
     ) -> str:
+        return self.generate_result(
+            question=question,
+            context=context,
+            facts=facts,
+            intent=intent,
+        ).text
+
+    def generate_result(
+        self,
+        *,
+        question: str,
+        context: str,
+        facts: dict,
+        intent: str,
+    ) -> GeneratedAnswer:
         prompt = build_final_answer_prompt(
             question=question,
             context=context,
@@ -124,5 +146,12 @@ class AnswerService:
         if not answer:
             raise RuntimeError("최종 답변이 비어 있습니다.")
 
-        return answer
+        return GeneratedAnswer(
+            text=answer,
+            sources=[
+                strip_markdown(source)
+                for source in structured_answer.sources
+                if strip_markdown(source)
+            ],
+        )
         

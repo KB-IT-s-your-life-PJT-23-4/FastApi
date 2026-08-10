@@ -169,16 +169,21 @@ Content-Type: application/json
 | `answer` | `string \| null` | 완료 또는 거절 답변. Markdown 문법이 없는 표시용 일반 텍스트 |
 | `clarification_questions` | `array` | 추가 질문 목록, 최대 3개 |
 | `facts` | `object` | 현재까지 확인·정규화된 사실 |
-| `references` | `array` | 검색된 법령의 조문별 링크. 추가 질문·거절·`product`·`procedure` 응답은 빈 배열 |
+| `sources` | `array` | 최종 답변에서 실제 근거로 사용한 법령과 해당 조문 링크. 추가 질문·거절·`product`·`procedure` 응답은 빈 배열 |
 
-`references` 항목 구조:
+`sources` 항목 구조:
 
 | 필드 | 타입 | 설명 |
 |---|---|---|
-| `law_name` | `string` | 법령명 |
-| `article_no` | `string` | 조문 번호(예: `제58조`, `제53조의2`) |
-| `title` | `string \| null` | 조문 제목 |
-| `url` | `string` | 국가법령정보센터의 해당 조문 링크 |
+| `citation` | `string` | AI 답변의 근거 문자열(예: `상속세 및 증여세법 제58조`) |
+| `url` | `string \| null` | 국가법령정보센터의 해당 조문 링크. 메타데이터와 매칭되지 않으면 `null` |
+
+벡터 검색 결과나 LLM의 별도 참고자료 목록을 그대로 반환하는 구조가 아니다.
+최종적으로 Spring에 전달되는 `answer` 문자열의 `근거` 영역에서 조문 번호를
+다시 추출한 뒤, ChromaDB에서 해당 조문의 메타데이터를 직접 조회하여
+Spring에 반환한다. 검색 상위
+조문에 포함되지 않았더라도 답변 근거로 사용된 조문이면 URL을 생성하며,
+검색됐지만 최종 답변에 사용하지 않은 조문은 제외한다.
 
 벡터 DB 메타데이터에 `mst`가 있으면 그 법령 버전을 가리키는
 `lsiSeq` 링크를 만들고, 없으면 `law_code` 또는 `law_id`로 현행 법령을
@@ -255,17 +260,13 @@ other_gift, other, jailbreak
     "previously_used_deduction": 10000000,
     "deduction_renewal_date": "2033-05-01"
   },
-  "references": [
+  "sources": [
     {
-      "law_name": "상속세 및 증여세법",
-      "article_no": "제53조",
-      "title": "증여재산 공제",
+      "citation": "상속세 및 증여세법 제53조",
       "url": "https://www.law.go.kr/LSW/lsInfoP.do?lsId=001561&urlMode=lsInfoP&joNo=005300"
     },
     {
-      "law_name": "상속세 및 증여세법",
-      "article_no": "제58조",
-      "title": "기납부세액공제",
+      "citation": "상속세 및 증여세법 제58조",
       "url": "https://www.law.go.kr/LSW/lsInfoP.do?lsId=001561&urlMode=lsInfoP&joNo=005800"
     }
   ]
@@ -323,7 +324,7 @@ if (response.status() == ChatStatus.COMPLETED) {
     "relationship_type": "parent_to_adult_child",
     "previously_used_deduction": 0
   },
-  "references": []
+  "sources": []
 }
 ```
 
@@ -642,10 +643,8 @@ public record ClarificationQuestion(
 ```
 
 ```java
-public record LawReference(
-    String lawName,
-    String articleNo,
-    String title,
+public record AnswerSource(
+    String citation,
     String url
 ) {}
 ```
@@ -659,7 +658,7 @@ public record ChatResponse(
     String answer,
     List<ClarificationQuestion> clarificationQuestions,
     Map<String, Object> facts,
-    List<LawReference> references
+    List<AnswerSource> sources
 ) {}
 ```
 
@@ -679,7 +678,7 @@ public record ClarificationRequest(
 Jackson에서 `snake_case` ↔ `camelCase` 변환을 전역 설정하지 않는다면
 각 필드에 `@JsonProperty("conversation_id")` 같은 매핑을 추가해야 한다.
 
-현재 Spring `ChatResponse`에 `references`가 없고 알 수 없는 JSON 필드를
+현재 Spring `ChatResponse`에 `sources`가 없고 알 수 없는 JSON 필드를
 무시하도록 설정하지 않았다면 FastAPI 배포 후 역직렬화가 실패할 수 있다.
 FastAPI 변경과 함께 위 DTO 필드를 Spring에 반영하거나, 전환 기간에는
 `@JsonIgnoreProperties(ignoreUnknown = true)`를 적용해야 한다.
@@ -691,7 +690,7 @@ return switch (response.status()) {
     case COMPLETED -> ChatResult.completed(
         response.answer(),
         response.facts(),
-        response.references()
+        response.sources()
     );
 
     case CLARIFICATION_REQUIRED -> ChatResult.clarification(
@@ -721,4 +720,4 @@ return switch (response.status()) {
 - 최종 완료는 `status == COMPLETED`로 판단한다.
 - `requires_calculation`을 완료 여부로 사용하지 않는다.
 - 매 응답에서 최신 `facts`를 다음 요청용 상태로 보관한다.
-- `COMPLETED`이면 `references`를 링크 목록으로 표시하고, 빈 배열이면 근거 영역을 숨긴다.
+- `COMPLETED`이면 `sources`를 답변 근거 링크로 표시하고, 빈 배열이면 근거 영역을 숨긴다.

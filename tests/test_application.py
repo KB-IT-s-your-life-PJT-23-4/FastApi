@@ -38,6 +38,7 @@ from app.services.gift_tax_service import (
     calculate_simple_gift_tax,
 )
 from app.services.retrieval_service import (
+    LawReference,
     RetrievalService,
     RetrievalResult,
     build_law_article_url,
@@ -60,9 +61,15 @@ from app.schemas.chat import (
 from app.schemas.answer import AnswerSection, StructuredAnswer
 from app.services.answer_service import (
     AnswerService,
+    GeneratedAnswer,
     render_plain_text_answer,
 )
-from app.services.chat_service import ChatService, merge_known_facts
+from app.services.chat_service import (
+    ChatService,
+    extract_citations_from_answer,
+    merge_known_facts,
+    resolve_answer_sources,
+)
 
 
 def test_health_endpoint() -> None:
@@ -240,11 +247,17 @@ def test_selected_family_facts_are_used_before_clarification() -> None:
             retrieve_result=lambda question: RetrievalResult(
                 context="",
                 references=[],
-            )
+            ),
+            find_references_for_citations=(
+                lambda citations, existing: existing
+            ),
         ),
         clarification_service=FakeClarificationService(),
         answer_service=SimpleNamespace(
-            generate=lambda **kwargs: "예상 세액 답변"
+            generate_result=lambda **kwargs: GeneratedAnswer(
+                text="예상 세액 답변",
+                sources=[],
+            )
         ),
         context_service=ContextService(),
     )
@@ -1057,11 +1070,104 @@ def test_law_references_are_built_from_grouped_metadata() -> None:
     assert "joNo=005800" in references[0].url
 
 
-def test_chat_response_openapi_contains_law_references() -> None:
+def test_chat_response_openapi_contains_answer_sources() -> None:
     schemas = app.openapi()["components"]["schemas"]
 
-    assert "references" in schemas["ChatResponse"]["properties"]
-    assert "LawReference" in schemas
+    assert "sources" in schemas["ChatResponse"]["properties"]
+    assert "references" not in schemas["ChatResponse"]["properties"]
+    assert "AnswerSource" in schemas
+
+
+def test_only_answer_citations_are_returned_with_law_urls() -> None:
+    law_references = [
+        LawReference(
+            law_name="상속세 및 증여세법",
+            article_no="제53조",
+            title="증여재산 공제",
+            url="https://law.example/53",
+        ),
+        LawReference(
+            law_name="상속세 및 증여세법",
+            article_no="제58조",
+            title="기납부세액공제",
+            url="https://law.example/58",
+        ),
+    ]
+
+    sources = resolve_answer_sources(
+        ["상속세 및 증여세법 제58조"],
+        law_references,
+    )
+
+    assert len(sources) == 1
+    assert sources[0].citation == "상속세 및 증여세법 제58조"
+    assert sources[0].url == "https://law.example/58"
+
+
+def test_law_citations_are_extracted_from_final_answer_text() -> None:
+    answer = (
+        "예상 증여세는 100만원입니다.\n\n"
+        "계산 과정\n"
+        "1. 과세표준을 계산합니다.\n\n"
+        "근거\n"
+        "• 상속세 및 증여세법 제53조\n"
+        "• 상속세 및 증여세법 제58조\n\n"
+        "안내\n"
+        "간이 추정 결과입니다."
+    )
+
+    assert extract_citations_from_answer(answer) == [
+        "상속세 및 증여세법 제53조",
+        "상속세 및 증여세법 제58조",
+    ]
+
+
+def test_answer_article_is_looked_up_outside_search_top_results() -> None:
+    law_repository = SimpleNamespace(
+        find_metadatas_by_article_numbers=lambda numbers: [{
+            "law_name": "상속세 및 증여세법",
+            "law_id": "001561",
+            "article_label": numbers[0],
+            "article_title": "기납부세액공제",
+        }]
+    )
+    service = RetrievalService(
+        interpretation_repository=FakeRepository(),
+        law_repository=law_repository,
+    )
+
+    references = service.find_references_for_citations(
+        ["상속세 및 증여세법 제58조"],
+        [],
+    )
+
+    assert len(references) == 1
+    assert references[0].article_no == "제58조"
+    assert "lsId=001561" in references[0].url
+    assert "joNo=005800" in references[0].url
+
+
+def test_parent_article_does_not_match_branch_article_citation() -> None:
+    sources = resolve_answer_sources(
+        ["상속세 및 증여세법 제53조의2"],
+        [
+            LawReference(
+                law_name="상속세 및 증여세법",
+                article_no="제53조",
+                title="증여재산 공제",
+                url="https://law.example/53",
+            ),
+            LawReference(
+                law_name="상속세 및 증여세법",
+                article_no="제53조의2",
+                title="증여재산 공제의 특례",
+                url="https://law.example/53-2",
+            ),
+        ],
+    )
+
+    assert len(sources) == 1
+    assert sources[0].url == "https://law.example/53-2"
 
 
 def test_law_chunks_are_grouped_by_article() -> None:
