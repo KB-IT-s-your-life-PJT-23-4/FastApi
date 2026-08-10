@@ -193,10 +193,17 @@ other_gift, other, jailbreak
     "total_gift_amount": 60000000,
     "deduction_limit": 50000000,
     "previously_used_deduction": 0,
+    "previous_applied_deduction": 0,
+    "previous_taxable_base": 0,
+    "previous_tax_rate_percent": 0,
+    "previous_progressive_deduction": 0,
+    "previous_calculated_tax": 0,
     "applied_deduction": 50000000,
     "taxable_base": 10000000,
     "tax_rate_percent": 10,
     "progressive_deduction": 0,
+    "combined_calculated_tax": 1000000,
+    "prior_gift_tax_credit": 0,
     "estimated_calculated_tax": 1000000,
     "is_estimate": true
   }

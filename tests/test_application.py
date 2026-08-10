@@ -785,7 +785,50 @@ def test_previous_gift_uses_full_deduction_once_for_combined_base() -> None:
     assert estimate.applied_deduction == 50_000_000
     assert estimate.taxable_base == 25_000_000
     assert estimate.tax_rate_percent == 10
+    assert estimate.previous_calculated_tax == 0
+    assert estimate.prior_gift_tax_credit == 0
     assert estimate.estimated_calculated_tax == 2_500_000
+
+
+def test_current_gift_tax_subtracts_previous_gift_tax_credit() -> None:
+    estimate = calculate_simple_gift_tax(
+        gift_amount=20_000_000,
+        relationship_type="parent_to_adult_child",
+        previous_gift_amount=230_000_000,
+        previously_used_deduction=50_000_000,
+    )
+
+    assert estimate.total_gift_amount == 250_000_000
+    assert estimate.taxable_base == 200_000_000
+    assert estimate.tax_rate_percent == 20
+    assert estimate.progressive_deduction == 10_000_000
+    assert estimate.combined_calculated_tax == 30_000_000
+    assert estimate.previous_taxable_base == 180_000_000
+    assert estimate.previous_tax_rate_percent == 20
+    assert estimate.previous_progressive_deduction == 10_000_000
+    assert estimate.previous_calculated_tax == 26_000_000
+    assert estimate.prior_gift_tax_credit == 26_000_000
+    assert estimate.estimated_calculated_tax == 4_000_000
+
+
+def test_current_gift_tax_handles_progressive_bracket_crossing() -> None:
+    estimate = calculate_simple_gift_tax(
+        gift_amount=20_000_000,
+        relationship_type="parent_to_adult_child",
+        previous_gift_amount=140_000_000,
+        previously_used_deduction=50_000_000,
+    )
+
+    # 과거 과세표준 9,000만원: 10% = 900만원
+    assert estimate.previous_taxable_base == 90_000_000
+    assert estimate.previous_calculated_tax == 9_000_000
+
+    # 합산 과세표준 1억 1,000만원: 20% - 1,000만원 = 1,200만원
+    assert estimate.taxable_base == 110_000_000
+    assert estimate.combined_calculated_tax == 12_000_000
+
+    # 이번 2,000만원으로 증가한 세액만 반환
+    assert estimate.estimated_calculated_tax == 3_000_000
 
 
 def test_gift_tax_calculation_process_is_logged(caplog) -> None:
