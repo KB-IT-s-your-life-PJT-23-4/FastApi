@@ -169,6 +169,21 @@ Content-Type: application/json
 | `answer` | `string \| null` | 완료 또는 거절 답변. Markdown 문법이 없는 표시용 일반 텍스트 |
 | `clarification_questions` | `array` | 추가 질문 목록, 최대 3개 |
 | `facts` | `object` | 현재까지 확인·정규화된 사실 |
+| `references` | `array` | 검색된 법령의 조문별 링크. 추가 질문·거절·`product`·`procedure` 응답은 빈 배열 |
+
+`references` 항목 구조:
+
+| 필드 | 타입 | 설명 |
+|---|---|---|
+| `law_name` | `string` | 법령명 |
+| `article_no` | `string` | 조문 번호(예: `제58조`, `제53조의2`) |
+| `title` | `string \| null` | 조문 제목 |
+| `url` | `string` | 국가법령정보센터의 해당 조문 링크 |
+
+벡터 DB 메타데이터에 `mst`가 있으면 그 법령 버전을 가리키는
+`lsiSeq` 링크를 만들고, 없으면 `law_code` 또는 `law_id`로 현행 법령을
+가리키는 `lsId` 링크를 만든다. 조문 번호는 `joNo`로 함께 전달하므로
+사용자가 링크를 누르면 해당 조문 위치로 이동한다.
 
 `intent` 값:
 
@@ -239,7 +254,21 @@ other_gift, other, jailbreak
     "previous_gift_same_donor": true,
     "previously_used_deduction": 10000000,
     "deduction_renewal_date": "2033-05-01"
-  }
+  },
+  "references": [
+    {
+      "law_name": "상속세 및 증여세법",
+      "article_no": "제53조",
+      "title": "증여재산 공제",
+      "url": "https://www.law.go.kr/LSW/lsInfoP.do?lsId=001561&urlMode=lsInfoP&joNo=005300"
+    },
+    {
+      "law_name": "상속세 및 증여세법",
+      "article_no": "제58조",
+      "title": "기납부세액공제",
+      "url": "https://www.law.go.kr/LSW/lsInfoP.do?lsId=001561&urlMode=lsInfoP&joNo=005800"
+    }
+  ]
 }
 ```
 
@@ -293,7 +322,8 @@ if (response.status() == ChatStatus.COMPLETED) {
     "recipient_age": null,
     "relationship_type": "parent_to_adult_child",
     "previously_used_deduction": 0
-  }
+  },
+  "references": []
 }
 ```
 
@@ -612,6 +642,15 @@ public record ClarificationQuestion(
 ```
 
 ```java
+public record LawReference(
+    String lawName,
+    String articleNo,
+    String title,
+    String url
+) {}
+```
+
+```java
 public record ChatResponse(
     String conversationId,
     ChatStatus status,
@@ -619,7 +658,8 @@ public record ChatResponse(
     boolean requiresCalculation,
     String answer,
     List<ClarificationQuestion> clarificationQuestions,
-    Map<String, Object> facts
+    Map<String, Object> facts,
+    List<LawReference> references
 ) {}
 ```
 
@@ -639,13 +679,19 @@ public record ClarificationRequest(
 Jackson에서 `snake_case` ↔ `camelCase` 변환을 전역 설정하지 않는다면
 각 필드에 `@JsonProperty("conversation_id")` 같은 매핑을 추가해야 한다.
 
+현재 Spring `ChatResponse`에 `references`가 없고 알 수 없는 JSON 필드를
+무시하도록 설정하지 않았다면 FastAPI 배포 후 역직렬화가 실패할 수 있다.
+FastAPI 변경과 함께 위 DTO 필드를 Spring에 반영하거나, 전환 기간에는
+`@JsonIgnoreProperties(ignoreUnknown = true)`를 적용해야 한다.
+
 ## 14. Spring 상태 분기 예시
 
 ```java
 return switch (response.status()) {
     case COMPLETED -> ChatResult.completed(
         response.answer(),
-        response.facts()
+        response.facts(),
+        response.references()
     );
 
     case CLARIFICATION_REQUIRED -> ChatResult.clarification(
@@ -675,3 +721,4 @@ return switch (response.status()) {
 - 최종 완료는 `status == COMPLETED`로 판단한다.
 - `requires_calculation`을 완료 여부로 사용하지 않는다.
 - 매 응답에서 최신 `facts`를 다음 요청용 상태로 보관한다.
+- `COMPLETED`이면 `references`를 링크 목록으로 표시하고, 빈 배열이면 근거 영역을 숨긴다.

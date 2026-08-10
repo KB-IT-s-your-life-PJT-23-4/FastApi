@@ -128,6 +128,7 @@ class ChatService:
         product_context = ""
         rag_context = ""
         etf_context = ""
+        references = []
 
         if request.families:
             families_data = [
@@ -155,9 +156,12 @@ class ChatService:
             )
 
         if intent in RAG_INTENTS:
-            rag_context = self.retrieval_service.retrieve(
+            retrieval_result = self.retrieval_service.retrieve_result(
                 question
             )
+            rag_context = retrieval_result.context
+            if intent not in {"product", "procedure"}:
+                references = retrieval_result.references
 
         base_context = self.context_service.combine(
             family_context,
@@ -230,6 +234,7 @@ class ChatService:
             ),
             answer=answer,
             facts=facts,
+            references=references,
         )
 
     def continue_after_clarification(
@@ -256,6 +261,7 @@ class ChatService:
         product_context = ""
         rag_context = ""
         etf_context = ""
+        references = []
 
         if request.families:
             families_data = [
@@ -282,9 +288,12 @@ class ChatService:
             )
 
         if intent in RAG_INTENTS:
-            rag_context = self.retrieval_service.retrieve(
+            retrieval_result = self.retrieval_service.retrieve_result(
                 request.question
             )
+            rag_context = retrieval_result.context
+            if intent not in {"product", "procedure"}:
+                references = retrieval_result.references
 
         base_context = self.context_service.combine(
             family_context,
@@ -344,6 +353,7 @@ class ChatService:
             requires_calculation=requires_calculation,
             answer=answer,
             facts=facts,
+            references=references,
         )
 
     def _extract_selected_family_facts(
@@ -374,4 +384,3 @@ class ChatService:
         )
         family_facts["recipient_name"] = selected_family.name
         return family_facts
-        

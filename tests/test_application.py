@@ -39,6 +39,10 @@ from app.services.gift_tax_service import (
 )
 from app.services.retrieval_service import (
     RetrievalService,
+    RetrievalResult,
+    build_law_article_url,
+    build_law_references,
+    convert_article_no_to_jo_no,
     group_law_results_by_article,
 )
 from app.services.intent_service import (
@@ -233,7 +237,10 @@ def test_selected_family_facts_are_used_before_clarification() -> None:
     service = ChatService(
         intent_service=FakeIntentService(),
         retrieval_service=SimpleNamespace(
-            retrieve=lambda question: ""
+            retrieve_result=lambda question: RetrievalResult(
+                context="",
+                references=[],
+            )
         ),
         clarification_service=FakeClarificationService(),
         answer_service=SimpleNamespace(
@@ -992,6 +999,69 @@ def test_retrieval_formats_both_search_results() -> None:
     assert "법령해석 1" in context
     assert "관련 법령 원문" in context
     assert "법령 원문 1" in context
+
+
+@pytest.mark.parametrize(
+    ("article_no", "expected"),
+    [
+        ("제1조", "000100"),
+        ("제53조", "005300"),
+        ("제53조의2", "005302"),
+        ("제58조", "005800"),
+        ("제58조 제1항", None),
+    ],
+)
+def test_article_number_is_converted_for_law_url(
+    article_no,
+    expected,
+) -> None:
+    assert convert_article_no_to_jo_no(article_no) == expected
+
+
+def test_law_url_prefers_mst_for_exact_version() -> None:
+    url = build_law_article_url({
+        "mst": "276123",
+        "law_id": "001561",
+        "article_label": "제58조",
+    })
+
+    assert "lsiSeq=276123" in url
+    assert "lsId=" not in url
+    assert "joNo=005800" in url
+
+
+def test_law_url_uses_law_id_when_mst_is_missing() -> None:
+    url = build_law_article_url({
+        "law_code": "001561",
+        "article_no": "제53조의2",
+    })
+
+    assert "lsId=001561" in url
+    assert "joNo=005302" in url
+
+
+def test_law_references_are_built_from_grouped_metadata() -> None:
+    references = build_law_references({
+        "metadatas": [[{
+            "law_name": "상속세 및 증여세법",
+            "law_id": "001561",
+            "article_label": "제58조",
+            "article_title": "기납부세액공제",
+        }]],
+    })
+
+    assert len(references) == 1
+    assert references[0].article_no == "제58조"
+    assert references[0].title == "기납부세액공제"
+    assert "lsId=001561" in references[0].url
+    assert "joNo=005800" in references[0].url
+
+
+def test_chat_response_openapi_contains_law_references() -> None:
+    schemas = app.openapi()["components"]["schemas"]
+
+    assert "references" in schemas["ChatResponse"]["properties"]
+    assert "LawReference" in schemas
 
 
 def test_law_chunks_are_grouped_by_article() -> None:
