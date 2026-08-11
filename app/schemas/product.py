@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from decimal import Decimal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
 
 class ProductSchema(BaseModel):
@@ -48,8 +48,12 @@ class EtfProductData(ProductSchema):
         description="추종 지수",
     )
 
-    annual_return_5y: Decimal = Field(
+    annual_return_10y: Decimal = Field(
         max_digits=8,
         decimal_places=4,
-        description="5년 연평균 수익률(%)",
+        validation_alias=AliasChoices(
+            "annual_return_10y",
+            "annual_return_5y",
+        ),
+        description="10년 연평균 수익률(%). 기존 5년 필드도 입력 호환",
     )

@@ -117,12 +117,26 @@ def register_exception_handlers(
         request: Request,
         exc: RequestValidationError,
     ) -> JSONResponse:
+        details = exc.errors()
+        safe_details = [
+            {
+                "type": error.get("type"),
+                "loc": error.get("loc"),
+                "msg": error.get("msg"),
+            }
+            for error in details
+        ]
+        logger.warning(
+            "request_validation_failed path=%s details=%s",
+            request.url.path,
+            safe_details,
+        )
         return create_error_response(
             request=request,
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             code="REQUEST_VALIDATION_ERROR",
             message="요청 데이터 형식이 올바르지 않습니다.",
-            details=exc.errors(),
+            details=details,
         )
 
     @app.exception_handler(HTTPException)
