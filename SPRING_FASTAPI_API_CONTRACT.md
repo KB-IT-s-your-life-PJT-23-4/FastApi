@@ -58,8 +58,10 @@ Content-Type: application/json
 | `conversation_id` | `string \| null` | X | 최초 요청은 `null` 또는 생략 |
 | `question` | `string` | O | 1~2,000자의 사용자 질문 |
 | `families` | `array` | X | 등록 가족 목록. 생략 가능, 최대 3명 |
-| `product` | `object \| null` | X | 선택 금융상품 정보 |
+| `products` | `array` | X | 예금·적금 상품 목록 |
+| `etf_products` | `array` | X | ETF 상품 목록 |
 | `facts` | `object` | X | Spring이 이미 알고 있는 추가 사실 |
+| `conversation_history` | `array` | X | 최근 대화, 최대 20개. `role`은 `user` 또는 `assistant`, `content`는 1~4,000자 |
 
 `families`가 없으면 필드를 생략하거나 빈 배열 `[]`을 전송한다. 명시적인
 `null`은 허용하지 않으며 `422 Unprocessable Entity`가 반환된다.
@@ -98,11 +100,25 @@ Content-Type: application/json
       "deduction_renewal_date": "2033-05-01"
     }
   ],
-  "product": null,
+  "products": [],
+  "etf_products": [],
   "facts": {
     "residency": "국내 거주자",
     "use_latest_tax_rate": true
-  }
+  },
+  "conversation_history": []
+}
+```
+
+ETF의 수익률 필드는 Spring 기준으로 `annual_return_10y`를 사용한다.
+FastAPI는 전환 호환성을 위해 기존 `annual_return_5y` 입력도 허용하지만,
+신규 요청은 다음 형식을 사용한다.
+
+```json
+{
+  "product_name": "KBSTAR 200",
+  "tracking_index": "KOSPI 200",
+  "annual_return_10y": 7.25
 }
 ```
 
@@ -364,7 +380,9 @@ Content-Type: application/json
 | `facts` | `object` | O | 직전 응답의 facts |
 | `answers` | `object` | O | 사용자가 이번에 입력한 답변 |
 | `families` | `array` | X | 최초 요청과 동일한 최신 가족 목록, 최대 3명 |
-| `product` | `object \| null` | X | 최초 요청과 동일한 상품 정보 |
+| `products` | `array` | X | 최초 요청과 동일한 예금·적금 상품 목록 |
+| `etf_products` | `array` | X | 최초 요청과 동일한 ETF 상품 목록 |
+| `conversation_history` | `array` | X | 최근 대화, 최대 20개 |
 
 후속 요청의 사실 병합 우선순위:
 
@@ -628,8 +646,10 @@ public record ChatRequest(
     String conversationId,
     String question,
     List<FamilyData> families,
-    Object product,
-    Map<String, Object> facts
+    List<ProductData> products,
+    List<EtfProductData> etfProducts,
+    Map<String, Object> facts,
+    List<ConversationContextMessage> conversationHistory
 ) {}
 ```
 
@@ -671,7 +691,9 @@ public record ClarificationRequest(
     Map<String, Object> facts,
     Map<String, Object> answers,
     List<FamilyData> families,
-    Object product
+    List<ProductData> products,
+    List<EtfProductData> etfProducts,
+    List<ConversationContextMessage> conversationHistory
 ) {}
 ```
 

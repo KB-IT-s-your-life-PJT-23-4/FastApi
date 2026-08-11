@@ -13,6 +13,11 @@ ChatStatus = Literal[
     "REJECTED",
 ]
 
+
+class ConversationContextMessage(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str = Field(min_length=1, max_length=4000)
+
 class ChatRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -32,6 +37,10 @@ class ChatRequest(BaseModel):
         default_factory=list,
     )
     facts: dict[str, Any] = Field(default_factory=dict)
+    conversation_history: list[ConversationContextMessage] = Field(
+        default_factory=list,
+        max_length=20,
+    )
 
 class ClarificationQuestion(BaseModel):
     key: str
@@ -80,6 +89,10 @@ class ClarificationRequest(BaseModel):
     )
     etf_products: list[EtfProductData] = Field(
         default_factory=list,
+    )
+    conversation_history: list[ConversationContextMessage] = Field(
+        default_factory=list,
+        max_length=20,
     )
 
 QuestionIntent = Literal[

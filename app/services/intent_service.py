@@ -7,7 +7,10 @@ from app.prompts.intent import(
     QUESTION_INTENT_SYSTEM_PROMPT,
     build_question_intent_prompt
 )
-from app.schemas.chat import QuestionIntentResult
+from app.schemas.chat import (
+    ConversationContextMessage,
+    QuestionIntentResult,
+)
 from app.services.fact_normalization_service import (
     extract_calculation_facts_from_question,
 )
@@ -25,10 +28,12 @@ class IntentService:
         self,
         question: str,
         family_names: list[str] | None = None,
+        conversation_history: list[ConversationContextMessage] | None = None,
     ) -> QuestionIntentResult:
         prompt = build_question_intent_prompt(
             question,
             family_names=family_names,
+            conversation_history=conversation_history,
         )
 
         response = self.client.responses.create(
