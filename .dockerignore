@@ -6,3 +6,4 @@ data/documents
 storage
 *.md
 .env
+.env.example
