@@ -1,0 +1,9 @@
+.venv
+.idea
+.github
+tests
+data/documents
+storage
+*.md
+.env
+.env.example
