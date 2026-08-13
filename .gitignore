@@ -36,4 +36,4 @@ Thumbs.db
 *.pid
 
 # Generated vector database files
-storage/chroma/
+# storage/chroma/
