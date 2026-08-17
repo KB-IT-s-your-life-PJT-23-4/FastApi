@@ -15,4 +15,7 @@ __pycache__
 .env
 .env.*
 
+# 수집·재생성용 원본 데이터. API 런타임은 storage/chroma를 사용합니다.
+storage/raw
+
 *.log
