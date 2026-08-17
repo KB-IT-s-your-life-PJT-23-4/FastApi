@@ -10,6 +10,7 @@ pipeline {
 
     environment {
         IMAGE_NAME = 'wosyh18/mirizoom-fastapi'
+        REPOSITORY_URL = 'https://github.com/KB-IT-s-your-life-PJT-23-4/FastApi.git'
     }
 
     stages {
@@ -30,8 +31,8 @@ pipeline {
                     test -f uv.lock
                     test -f tests/test_application.py
 
-                    echo "Repository: ${GIT_URL}"
-                    echo "Commit: ${GIT_COMMIT}"
+                    echo "Repository: ${REPOSITORY_URL}"
+                    echo "Commit: $(git rev-parse HEAD)"
                     echo "Image: ${IMAGE_NAME}:${BUILD_NUMBER}"
                 '''
             }
@@ -57,10 +58,13 @@ pipeline {
                     set -eu
 
                     docker run --rm \
+                        --env APP_ENV=test \
                         --env OPENAI_API_KEY=ci-test-key \
                         --env OPENAI_EMBEDDING_API_KEY=ci-test-key \
+                        --env LAW_API_OC=ci-test-oc \
+                        --env CHROMA_PATH=/tmp/chroma \
                         "${IMAGE_NAME}:${BUILD_NUMBER}" \
-                        uv run pytest tests/test_application.py
+                        uv run pytest -q tests/test_application.py
                 '''
             }
         }
@@ -103,6 +107,13 @@ pipeline {
         }
 
         always {
+            sh '''
+                docker image rm \
+                    "${IMAGE_NAME}:${BUILD_NUMBER}" \
+                    "${IMAGE_NAME}:latest" \
+                    >/dev/null 2>&1 || true
+            '''
+
             deleteDir()
         }
     }
