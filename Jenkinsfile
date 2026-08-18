@@ -98,21 +98,26 @@ pipeline {
 
         stage('Trigger Deploy') {
             steps {
-                build job: 'deploy', parameters: [
-                    string(name: 'DEPLOY_SERVICE', value: 'fastapi'),
-                    string(name: 'DEPLOY_IMAGE_TAG', value: "${IMAGE_NAME}:${BUILD_NUMBER}")
-                ]
+                build(
+                    job: 'deploy(pull ec2)',
+                    wait: true,
+                    propagate: true,
+                    parameters: [
+                        string(name: 'SERVICE', value: 'fastapi'),
+                        string(name: 'IMAGE_TAG', value: "${BUILD_NUMBER}")
+                    ]
+                )
             }
         }
     }
 
     post {
         success {
-            echo "FastAPI 이미지 Push 완료: ${IMAGE_NAME}:${BUILD_NUMBER}"
+            echo "FastAPI 이미지 Push 및 배포 완료: ${IMAGE_NAME}:${BUILD_NUMBER}"
         }
 
         failure {
-            echo 'FastAPI 테스트, 이미지 Build 또는 Push에 실패했습니다.'
+            echo 'FastAPI CI/CD 파이프라인 실행 중 실패했습니다.'
         }
 
         always {
