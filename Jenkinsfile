@@ -120,6 +120,9 @@ pipeline {
             echo 'FastAPI CI/CD 파이프라인 실행 중 실패했습니다.'
         }
 
+
+
+
         always {
             sh '''
                 docker image rm \
