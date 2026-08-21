@@ -1,14 +1,11 @@
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from app.core.constants import (
     CALCULATION_INTENTS,
     FAMILY_FACT_KEYS
-)
-from app.data.gift_tax_rules import (
-    GIFT_DEDUCTION_TABLE,
-    GIFT_TAX_RATE_TABLE
 )
 from app.prompts.context import(
     build_calculation_error_context,
@@ -26,6 +23,10 @@ from app.services.fact_normalization_service import (
     validate_estimate_facts,
 )
 from app.services.gift_tax_service import create_tax_estimate_from_facts
+from app.services.tax_rule_service import TaxRuleService
+
+
+logger = logging.getLogger("uvicorn.error")
 
 class ContextService:
     """
@@ -38,6 +39,12 @@ class ContextService:
     - 계산 가능 여부 확인
     - 증여세율 및 공제 규칙 Context 추가
     """
+
+    def __init__(
+        self,
+        tax_rule_service: TaxRuleService | None = None,
+    ) -> None:
+        self.tax_rule_service = tax_rule_service
 
     def extract_family_facts(
         self,
@@ -268,24 +275,51 @@ class ContextService:
                     )
                 )
             else:
-                gift_tax_rule_context = (
-                    build_gift_tax_rule_context(
-                        rate_table=GIFT_TAX_RATE_TABLE,
-                        deduction_table=(
-                            GIFT_DEDUCTION_TABLE
-                        ),
-                        relationship_type=(
-                            normalized_facts.get(
-                                "relationship_type"
-                            )
-                        ),
-                    )
-                )
                 try:
-                    estimate = create_tax_estimate_from_facts(
-                        normalized_facts
+                    if self.tax_rule_service is None:
+                        raise RuntimeError(
+                            "TaxRuleService가 설정되지 않았습니다."
+                        )
+                    relationship_type = normalized_facts[
+                        "relationship_type"
+                    ]
+                    tax_rules = self.tax_rule_service.load_rules(
+                        relationship_type=relationship_type,
+                        recipient_is_minor=normalized_facts.get(
+                            "recipient_is_minor"
+                        ),
+                        gift_date=normalized_facts.get("gift_date"),
                     )
-                except (TypeError, ValueError, RuntimeError):
+                    rate_table = [
+                        {
+                            "upper_limit": bracket.upper_bound,
+                            "rate": float(bracket.tax_rate),
+                            "progressive_deduction": (
+                                bracket.progressive_deduction
+                            ),
+                        }
+                        for bracket in tax_rules.brackets
+                    ]
+                    gift_tax_rule_context = (
+                        build_gift_tax_rule_context(
+                            rate_table=rate_table,
+                            deduction_table={
+                                relationship_type: (
+                                    tax_rules.deduction_limit
+                                )
+                            },
+                            relationship_type=relationship_type,
+                        )
+                    )
+                    estimate = create_tax_estimate_from_facts(
+                        normalized_facts,
+                        tax_rules=tax_rules,
+                    )
+                except (TypeError, ValueError, RuntimeError) as exc:
+                    logger.exception(
+                        "gift_tax.rule_or_calculation_failed reason=%s",
+                        exc,
+                    )
                     estimate = None
                 if estimate is None:
                     calculation_notice = build_calculation_error_context()
