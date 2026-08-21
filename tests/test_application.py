@@ -1,3 +1,4 @@
+from datetime import date
 from decimal import Decimal
 from types import SimpleNamespace
 
@@ -14,10 +15,6 @@ from app.collectors.nts_interpretation_collector import (
     parse_interpretation_date,
 )
 from app.core.constants import RAG_INTENTS
-from app.data.gift_tax_rules import (
-    GIFT_DEDUCTION_TABLE,
-    GIFT_TAX_RATE_TABLE,
-)
 from app.main import app
 from app.prompts.answer import (
     FINAL_ANSWER_SYSTEM_PROMPT,
@@ -71,6 +68,7 @@ from app.services.answer_service import (
     render_plain_text_answer,
 )
 from app.schemas.product import EtfProductData
+from app.schemas.tax_rule import GiftTaxBracket, GiftTaxRules
 from app.services.chat_service import (
     ChatService,
     build_conversation_history_context,
@@ -78,6 +76,66 @@ from app.services.chat_service import (
     merge_known_facts,
     resolve_answer_sources,
 )
+
+
+GIFT_TAX_RATE_TABLE = [
+    {
+        "upper_limit": 100_000_000,
+        "rate": 0.10,
+        "progressive_deduction": 0,
+    },
+    {
+        "upper_limit": 500_000_000,
+        "rate": 0.20,
+        "progressive_deduction": 10_000_000,
+    },
+    {
+        "upper_limit": 1_000_000_000,
+        "rate": 0.30,
+        "progressive_deduction": 60_000_000,
+    },
+    {
+        "upper_limit": 3_000_000_000,
+        "rate": 0.40,
+        "progressive_deduction": 160_000_000,
+    },
+    {
+        "upper_limit": None,
+        "rate": 0.50,
+        "progressive_deduction": 460_000_000,
+    },
+]
+GIFT_DEDUCTION_TABLE = {
+    "parent_to_adult_child": 50_000_000,
+    "parent_to_minor_child": 20_000_000,
+}
+
+
+TEST_TAX_BRACKETS = tuple(
+    GiftTaxBracket(
+        lower_bound=(
+            0
+            if index == 0
+            else int(GIFT_TAX_RATE_TABLE[index - 1]["upper_limit"]) + 1
+        ),
+        upper_bound=bracket["upper_limit"],
+        tax_rate=Decimal(str(bracket["rate"])),
+        progressive_deduction=bracket["progressive_deduction"],
+    )
+    for index, bracket in enumerate(GIFT_TAX_RATE_TABLE)
+)
+TEST_TAX_RULES = GiftTaxRules(
+    effective_date=date(2026, 1, 1),
+    deduction_limit=50_000_000,
+    brackets=TEST_TAX_BRACKETS,
+)
+
+
+def tax_calculation_kwargs() -> dict:
+    return {
+        "deduction_limit": TEST_TAX_RULES.deduction_limit,
+        "tax_brackets": TEST_TAX_RULES.brackets,
+    }
 
 
 def test_conversation_history_context_preserves_recent_messages() -> None:
@@ -940,6 +998,7 @@ def test_gift_tax_is_calculated_by_server() -> None:
     estimate = calculate_simple_gift_tax(
         gift_amount=60_000_000,
         relationship_type="parent_to_adult_child",
+        **tax_calculation_kwargs(),
     )
 
     assert estimate.total_gift_amount == 60_000_000
@@ -956,6 +1015,7 @@ def test_previous_gift_uses_full_deduction_once_for_combined_base() -> None:
         relationship_type="parent_to_adult_child",
         previous_gift_amount=15_000_000,
         previously_used_deduction=15_000_000,
+        **tax_calculation_kwargs(),
     )
 
     assert estimate.total_gift_amount == 75_000_000
@@ -974,6 +1034,7 @@ def test_current_gift_tax_subtracts_previous_gift_tax_credit() -> None:
         relationship_type="parent_to_adult_child",
         previous_gift_amount=230_000_000,
         previously_used_deduction=50_000_000,
+        **tax_calculation_kwargs(),
     )
 
     assert estimate.total_gift_amount == 250_000_000
@@ -995,6 +1056,7 @@ def test_current_gift_tax_handles_progressive_bracket_crossing() -> None:
         relationship_type="parent_to_adult_child",
         previous_gift_amount=140_000_000,
         previously_used_deduction=50_000_000,
+        **tax_calculation_kwargs(),
     )
 
     # 과거 과세표준 9,000만원: 10% = 900만원
@@ -1015,6 +1077,7 @@ def test_gift_tax_calculation_process_is_logged(caplog) -> None:
     calculate_simple_gift_tax(
         gift_amount=60_000_000,
         relationship_type="parent_to_adult_child",
+        **tax_calculation_kwargs(),
     )
 
     messages = [record.getMessage() for record in caplog.records]
@@ -1034,7 +1097,8 @@ def test_gift_tax_calculation_process_is_logged(caplog) -> None:
 
 def test_progressive_tax_rate_is_selected_by_taxable_base() -> None:
     rate, progressive_deduction, calculated_tax = apply_gift_tax_rate(
-        500_000_000
+        500_000_000,
+        tax_brackets=TEST_TAX_BRACKETS,
     )
 
     assert rate == 20
@@ -1043,7 +1107,11 @@ def test_progressive_tax_rate_is_selected_by_taxable_base() -> None:
 
 
 def test_final_context_contains_precalculated_integer_tax_values() -> None:
-    context, facts = ContextService().build_final_context(
+    context, facts = ContextService(
+        tax_rule_service=SimpleNamespace(
+            load_rules=lambda **kwargs: TEST_TAX_RULES
+        )
+    ).build_final_context(
         base_context="",
         facts={
             "gift_amount": "6000만원",

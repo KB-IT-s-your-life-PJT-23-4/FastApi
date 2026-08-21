@@ -5,10 +5,7 @@ from dataclasses import asdict, dataclass
 from decimal import Decimal
 from typing import Any
 
-from app.data.gift_tax_rules import (
-    GIFT_DEDUCTION_TABLE,
-    GIFT_TAX_RATE_TABLE,
-)
+from app.schemas.tax_rule import GiftTaxBracket, GiftTaxRules
 from app.services.fact_normalization_service import validate_estimate_facts
 
 logger = logging.getLogger("uvicorn.error")
@@ -42,6 +39,7 @@ class GiftTaxEstimate:
 def apply_gift_tax_rate(
     taxable_base: int,
     *,
+    tax_brackets: tuple[GiftTaxBracket, ...] | list[GiftTaxBracket],
     calculation_stage: str = "combined",
 ) -> tuple[int, int, int]:
     """과세표준에 해당하는 세율, 누진공제액, 산출세액을 반환한다."""
@@ -55,14 +53,17 @@ def apply_gift_tax_rate(
         )
         return 0, 0, 0
 
-    for bracket in GIFT_TAX_RATE_TABLE:
-        upper_limit = bracket["upper_limit"]
-        if upper_limit is None or taxable_base <= upper_limit:
-            rate = Decimal(str(bracket["rate"]))
-            rate_percent = int(rate * 100)
-            progressive_deduction = int(
-                bracket["progressive_deduction"]
+    for bracket in tax_brackets:
+        if (
+            taxable_base >= bracket.lower_bound
+            and (
+                bracket.upper_bound is None
+                or taxable_base <= bracket.upper_bound
             )
+        ):
+            rate = bracket.tax_rate
+            rate_percent = int(rate * 100)
+            progressive_deduction = bracket.progressive_deduction
             calculated_tax = int(
                 Decimal(taxable_base) * rate
                 - progressive_deduction
@@ -89,6 +90,8 @@ def apply_gift_tax_rate(
 
 def create_tax_estimate_from_facts(
     facts: dict[str, Any],
+    *,
+    tax_rules: GiftTaxRules,
 ) -> GiftTaxEstimate | None:
     """정규화가 끝난 facts로 서버 간이 계산 결과를 만든다."""
     if validate_estimate_facts(facts):
@@ -120,6 +123,8 @@ def create_tax_estimate_from_facts(
         relationship_type=relationship_type,
         previous_gift_amount=previous_gift_amount,
         previously_used_deduction=previously_used_deduction,
+        deduction_limit=tax_rules.deduction_limit,
+        tax_brackets=tax_rules.brackets,
     )
 
 
@@ -129,12 +134,15 @@ def calculate_simple_gift_tax(
     relationship_type: str,
     previous_gift_amount: int = 0,
     previously_used_deduction: int = 0,
+    deduction_limit: int,
+    tax_brackets: tuple[GiftTaxBracket, ...] | list[GiftTaxBracket],
 ) -> GiftTaxEstimate:
     """현재 프로젝트 기준에 따른 증여세 간이 산출세액을 계산한다."""
     for field_name, value in {
         "gift_amount": gift_amount,
         "previous_gift_amount": previous_gift_amount,
         "previously_used_deduction": previously_used_deduction,
+        "deduction_limit": deduction_limit,
     }.items():
         if isinstance(value, bool) or not isinstance(value, int):
             raise TypeError(f"{field_name}은 원 단위 정수여야 합니다.")
@@ -151,7 +159,6 @@ def calculate_simple_gift_tax(
         previously_used_deduction,
     )
 
-    deduction_limit = GIFT_DEDUCTION_TABLE.get(relationship_type, 0)
     previous_applied_deduction = min(
         previous_gift_amount,
         previously_used_deduction,
@@ -167,6 +174,7 @@ def calculate_simple_gift_tax(
         previous_calculated_tax,
     ) = apply_gift_tax_rate(
         previous_taxable_base,
+        tax_brackets=tax_brackets,
         calculation_stage="previous",
     )
     logger.info(
@@ -209,6 +217,7 @@ def calculate_simple_gift_tax(
         combined_calculated_tax,
     ) = apply_gift_tax_rate(
         taxable_base,
+        tax_brackets=tax_brackets,
         calculation_stage="combined",
     )
     prior_gift_tax_credit = min(

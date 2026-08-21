@@ -28,6 +28,17 @@ class Settings(BaseSettings):
     law_top_k: int = Field(default=2, ge=1, le=20)
     law_chunk_top_k: int = Field(default=10, ge=1, le=100)
 
+    mirizoom_db_host: str = "localhost"
+    mirizoom_db_port: int = Field(default=3306, ge=1, le=65535)
+    mirizoom_db_name: str = "miriZoom"
+    mirizoom_db_user: str = "root"
+    mirizoom_db_password: str = ""
+    mirizoom_db_connect_timeout: int = Field(
+        default=5,
+        ge=1,
+        le=30,
+    )
+
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
