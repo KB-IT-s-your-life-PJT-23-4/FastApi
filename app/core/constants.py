@@ -25,7 +25,6 @@ DEFAULT_FACTS = {
 FAMILY_FACT_KEYS = {
     "gift_amount",
     "relationship_type",
-    "recipient_age",
     "recipient_is_minor",
     "has_previous_gifts",
     "previous_gift_amount",
@@ -49,10 +48,7 @@ FACT_KEY_ALIASES = {
     "증여 관계": "relationship_type",
     "관계": "relationship_type",
 
-    # 나이·미성년 여부
-    "자녀의 나이": "recipient_age",
-    "수증자의 나이": "recipient_age",
-    "나이": "recipient_age",
+    # 미성년 여부
     "수증자의 미성년 여부": (
         "recipient_is_minor"
     ),
@@ -90,7 +86,6 @@ CLARIFICATION_FACT_DATA_TYPES = {
     "recipient_name": "string",
     "gift_amount": "integer",
     "relationship_type": "string",
-    "recipient_age": "integer",
     "recipient_is_minor": "boolean",
     "gift_date": "date",
     "has_previous_gifts": "boolean",

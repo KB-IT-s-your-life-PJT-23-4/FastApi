@@ -71,10 +71,7 @@ FACT_KEY_ALIASES = {
     "증여 관계": "relationship_type",
     "관계": "relationship_type",
 
-    # 나이·미성년 여부
-    "자녀의 나이": "recipient_age",
-    "수증자의 나이": "recipient_age",
-    "나이": "recipient_age",
+    # 미성년 여부
     "수증자의 미성년 여부": (
         "recipient_is_minor"
     ),
@@ -249,26 +246,6 @@ def normalize_boolean_value(
     return None
 
 
-def parse_age(
-    value: Any,
-) -> int | None:
-    if value is None:
-        return None
-
-    if isinstance(value, int):
-        return value
-
-    match = re.search(
-        r"\d+",
-        str(value),
-    )
-
-    if not match:
-        return None
-
-    return int(match.group())
-
-
 def normalize_calculation_facts(
     facts: dict[str, Any],
     question: str = "",
@@ -284,11 +261,6 @@ def normalize_calculation_facts(
         )
     )
 
-    # 수증자 나이
-    recipient_age = parse_age(
-        normalized.get("recipient_age")
-    )
-
     # 미성년 여부
     recipient_is_minor = (
         normalize_boolean_value(
@@ -297,20 +269,6 @@ def normalize_calculation_facts(
             )
         )
     )
-
-    # 나이는 있지만 미성년 여부가 없다면
-    # 간이 계산 기준으로 판단
-    if (
-        recipient_is_minor is None
-        and recipient_age is not None
-    ):
-        recipient_is_minor = (
-            recipient_age < 19
-        )
-
-    normalized[
-        "recipient_age"
-    ] = recipient_age
 
     normalized[
         "recipient_is_minor"
@@ -693,7 +651,6 @@ PRODUCT_DATA_REQUIRED_MESSAGE = (
 
 FAMILY_FACT_KEYS = {
     "relationship_type",
-    "recipient_age",
     "recipient_is_minor",
     "has_previous_gifts",
     "previous_gift_amount",
@@ -1914,7 +1871,6 @@ def main() -> None:
     "family_id": 1,
     "name": "박준영",
     "relationship_type": "자녀",
-    "recipient_age": 22,
     "recipient_is_minor": False,
     "has_previous_gifts": False,
     "previous_gift_amount": 20000000,

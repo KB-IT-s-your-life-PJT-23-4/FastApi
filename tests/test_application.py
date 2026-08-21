@@ -50,9 +50,13 @@ from app.services.retrieval_service import (
 from app.services.intent_service import (
     IntentService,
     find_matching_family_name,
+    is_number_only_question,
 )
 from app.services.clarification_service import ClarificationService
-from app.prompts.intent import build_question_intent_prompt
+from app.prompts.intent import (
+    QUESTION_INTENT_SYSTEM_PROMPT,
+    build_question_intent_prompt,
+)
 from app.schemas.chat import (
     ChatRequest,
     ClarificationResult,
@@ -192,7 +196,7 @@ def test_chat_request_accepts_up_to_three_families() -> None:
         "family_id": 1,
         "name": "김민수",
         "relationship_type": "parent_to_adult_child",
-        "recipient_age": 30,
+        "recipient_is_minor": False,
         "gift_amount": 60_000_000,
     }
 
@@ -205,6 +209,21 @@ def test_chat_request_accepts_up_to_three_families() -> None:
     )
 
     assert len(request.families) == 3
+
+
+def test_family_contract_does_not_expose_recipient_age() -> None:
+    schemas = app.openapi()["components"]["schemas"]
+
+    assert "recipient_age" not in schemas["FamilyData"]["properties"]
+
+
+def test_age_in_question_only_derives_minor_status() -> None:
+    facts = extract_calculation_facts_from_question(
+        "17세 자녀에게 증여하려고 합니다."
+    )
+
+    assert facts["recipient_is_minor"] is True
+    assert "recipient_age" not in facts
 
 
 def test_chat_request_rejects_more_than_three_families() -> None:
@@ -300,6 +319,63 @@ def test_assessment_is_overridden_when_family_name_matches() -> None:
     assert result.requires_calculation is True
 
 
+@pytest.mark.parametrize(
+    "question",
+    [
+        "100000000",
+        "100,000,000",
+        "1.5",
+        "  100 000 000  ",
+    ],
+)
+def test_number_only_question_is_always_other(question) -> None:
+    def fail_if_called(**kwargs):
+        raise AssertionError("숫자-only 질문은 OpenAI를 호출하면 안 됩니다.")
+
+    service = IntentService(
+        client=SimpleNamespace(
+            responses=SimpleNamespace(create=fail_if_called)
+        ),
+        model="test-model",
+    )
+
+    result = service.classify(
+        question,
+        conversation_history=[
+            ConversationContextMessage(
+                role="user",
+                content="자녀에게 증여하려고 합니다.",
+            )
+        ],
+    )
+
+    assert is_number_only_question(question) is True
+    assert result.intent == "other"
+    assert result.requires_calculation is False
+    assert result.extracted_facts == {}
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "1억",
+        "6000만원",
+        "1억을 증여하면 세금이 얼마인가요?",
+    ],
+)
+def test_amount_unit_or_sentence_is_not_number_only(question) -> None:
+    assert is_number_only_question(question) is False
+
+
+def test_intent_prompt_explicitly_classifies_number_only_as_other() -> None:
+    assert '"100000000", "100,000,000", "1.5" → other' in (
+        QUESTION_INTENT_SYSTEM_PROMPT
+    )
+    assert "숫자만 입력된 질문은 계산 요청이 아니므로" in (
+        QUESTION_INTENT_SYSTEM_PROMPT
+    )
+
+
 def test_selected_family_facts_are_used_before_clarification() -> None:
     captured: dict = {}
 
@@ -354,7 +430,6 @@ def test_selected_family_facts_are_used_before_clarification() -> None:
                 "family_id": 1,
                 "name": "김민수",
                 "relationship_type": "parent_to_adult_child",
-                "recipient_age": 30,
                 "recipient_is_minor": False,
                 "has_previous_gifts": False,
             },
@@ -363,7 +438,6 @@ def test_selected_family_facts_are_used_before_clarification() -> None:
                 "name": "김민지",
                 "relationship_type": "parent_to_adult_child",
                 "gift_amount": 30_000_000,
-                "recipient_age": 25,
                 "recipient_is_minor": False,
                 "has_previous_gifts": True,
                 "previous_gift_amount": 10_000_000,
@@ -378,7 +452,7 @@ def test_selected_family_facts_are_used_before_clarification() -> None:
     assert facts["recipient_name"] == "김민지"
     assert facts["gift_amount"] == 20_000_000
     assert facts["relationship_type"] == "parent_to_adult_child"
-    assert facts["recipient_age"] == 25
+    assert "recipient_age" not in facts
     assert facts["recipient_is_minor"] is False
     assert facts["has_previous_gifts"] is True
     assert facts["previous_gift_amount"] == 10_000_000
@@ -518,7 +592,7 @@ def test_duplicate_clarification_keys_are_removed() -> None:
     assert result.questions[0].data_type == "boolean"
 
 
-def test_clarification_questions_prioritize_age_and_previous_gifts() -> None:
+def test_clarification_prioritizes_minor_status_and_previous_gifts() -> None:
     response = SimpleNamespace(
         output_text=(
             '{"needs_clarification":true,'
@@ -532,8 +606,8 @@ def test_clarification_questions_prioritize_age_and_previous_gifts() -> None:
             '{"key":"previous_gift_amount","data_type":"integer",'
             '"question":"이전 증여금액은 얼마인가요?",'
             '"reason":"합산 금액 확인","required":true},'
-            '{"key":"recipient_age","data_type":"integer",'
-            '"question":"수증자의 나이는 몇 살인가요?",'
+            '{"key":"recipient_is_minor","data_type":"boolean",'
+            '"question":"수증자가 미성년자인가요?",'
             '"reason":"공제 확인","required":true},'
             '{"key":"previous_gift_date","data_type":"date",'
             '"question":"이전 증여일은 언제인가요?",'
@@ -560,7 +634,7 @@ def test_clarification_questions_prioritize_age_and_previous_gifts() -> None:
     )
 
     assert [question.key for question in result.questions] == [
-        "recipient_age",
+        "recipient_is_minor",
         "previous_gift_amount",
         "previous_gift_date",
     ]
@@ -577,8 +651,8 @@ def test_previous_gift_details_wait_for_previous_gift_confirmation() -> None:
             '{"key":"has_previous_gifts","data_type":"boolean",'
             '"question":"이전 증여가 있었나요?",'
             '"reason":"합산 여부 확인","required":true},'
-            '{"key":"recipient_age","data_type":"integer",'
-            '"question":"수증자의 나이는 몇 살인가요?",'
+            '{"key":"recipient_is_minor","data_type":"boolean",'
+            '"question":"수증자가 미성년자인가요?",'
             '"reason":"공제 확인","required":true}],'
             '"known_facts":[],'
             '"reason":"추가 정보가 필요합니다."}'
@@ -602,7 +676,7 @@ def test_previous_gift_details_wait_for_previous_gift_confirmation() -> None:
     )
 
     assert [question.key for question in result.questions] == [
-        "recipient_age",
+        "recipient_is_minor",
         "has_previous_gifts",
     ]
 
@@ -825,7 +899,6 @@ def test_question_facts_override_confirmation_answers() -> None:
         {
             "gift_amount": "맞음",
             "relationship_type": "부모",
-            "recipient_age": "22세",
             "recipient_is_minor": "맞음",
             "has_previous_gifts": False,
         },
@@ -835,7 +908,7 @@ def test_question_facts_override_confirmation_answers() -> None:
     assert extracted["gift_amount"] == 60_000_000
     assert extracted["recipient_is_minor"] is False
     assert facts["gift_amount"] == 60_000_000
-    assert facts["recipient_age"] == 22
+    assert "recipient_age" not in facts
     assert facts["recipient_is_minor"] is False
     assert facts["relationship_type"] == (
         "parent_to_adult_child"

@@ -30,6 +30,15 @@ class IntentService:
         family_names: list[str] | None = None,
         conversation_history: list[ConversationContextMessage] | None = None,
     ) -> QuestionIntentResult:
+        if is_number_only_question(question):
+            return QuestionIntentResult(
+                intent="other",
+                requires_calculation=False,
+                reason=(
+                    "숫자만으로는 증여 상담 의도를 확인할 수 없습니다."
+                ),
+            )
+
         prompt = build_question_intent_prompt(
             question,
             family_names=family_names,
@@ -78,6 +87,17 @@ class IntentService:
                 )
             )
         return result
+
+
+def is_number_only_question(question: str) -> bool:
+    """단위나 설명 없이 숫자 형식만 입력됐는지 판단한다."""
+    normalized = str(question or "").strip()
+    if not normalized:
+        return False
+    return re.fullmatch(
+        r"[+-]?(?:\d{1,3}(?:,\d{3})+|\d+)(?:\.\d+)?",
+        re.sub(r"\s+", "", normalized),
+    ) is not None
 
 
 def find_matching_family_name(

@@ -22,6 +22,8 @@ def normalize_calculation_facts(
     normalized = normalize_fact_keys(
             facts
         )
+    # 과거 클라이언트가 보낸 나이 필드는 계산 facts에 보존하지 않는다.
+    normalized.pop("recipient_age", None)
     
     # 증여금액 변환: "6000만원" → 60000000
     gift_amount = parse_korean_amount(
@@ -33,12 +35,8 @@ def normalize_calculation_facts(
         )
     normalized["gift_amount"] = gift_amount
 
-    # 수증자 나이
-    recipient_age = parse_age(
-        normalized.get("recipient_age")
-    )
-    if recipient_age is None:
-        recipient_age = extract_age_from_text(question)
+    # 질문에 나이가 직접 포함된 경우 미성년 여부만 파생한다.
+    detected_age = extract_age_from_text(question)
 
     # 미성년 여부
     recipient_is_minor = (
@@ -49,15 +47,10 @@ def normalize_calculation_facts(
         )
     )
 
-    # 숫자로 확인된 나이가 있으면 확인형 답변보다 우선한다.
-    if recipient_age is not None:
+    if detected_age is not None:
         recipient_is_minor = (
-            recipient_age < 19
+            detected_age < 19
         )
-
-    normalized[
-        "recipient_age"
-    ] = recipient_age
 
     normalized[
         "recipient_is_minor"
@@ -307,26 +300,6 @@ def normalize_boolean_value(
 
     return None
 
-def parse_age(
-    value: Any,
-) -> int | None:
-    if value is None:
-        return None
-
-    if isinstance(value, int):
-        return value
-
-    match = re.search(
-        r"\d+",
-        str(value),
-    )
-
-    if not match:
-        return None
-
-    return int(match.group())
-
-
 def extract_age_from_text(text: str) -> int | None:
     match = re.search(
         r"(?<!\d)(\d{1,3})\s*세(?!\d)",
@@ -345,14 +318,13 @@ def extract_calculation_facts_from_question(
 ) -> dict[str, Any]:
     facts: dict[str, Any] = {}
     gift_amount = extract_korean_amount_from_text(question)
-    recipient_age = extract_age_from_text(question)
+    detected_age = extract_age_from_text(question)
 
     if gift_amount is not None:
         facts["gift_amount"] = gift_amount
 
-    if recipient_age is not None:
-        facts["recipient_age"] = recipient_age
-        facts["recipient_is_minor"] = recipient_age < 19
+    if detected_age is not None:
+        facts["recipient_is_minor"] = detected_age < 19
     elif "미성년" in question:
         facts["recipient_is_minor"] = True
     elif "성년" in question or "성인" in question:

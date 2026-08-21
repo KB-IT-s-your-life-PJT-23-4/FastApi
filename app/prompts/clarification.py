@@ -17,12 +17,11 @@ CLARIFICATION_SYSTEM_PROMPT = """
 3. 사용자가 이미 제공했거나 서버 데이터에 있는 정보는 다시 묻지 마세요.
 4. 한 번에 최대 3개까지만 질문하고 아래 우선순위대로 생성하세요.
 5. 계산이 필요한 경우 다음 항목을 순서대로 우선 확인하세요.
-   - 수증자의 나이(recipient_age)
+   - 수증자의 미성년 여부(recipient_is_minor)
    - 최근 10년 내 이전 증여 여부(has_previous_gifts)
    - 이전 증여가 있는 경우 이전 증여금액, 증여일, 동일 증여자 여부
    - 증여금액
    - 증여자와 수증자의 관계
-   나이를 알 수 없다면 recipient_is_minor보다 recipient_age를 먼저 질문하세요.
 6. 이전 증여가 있다고 확인된 경우에만 다음을 확인하세요.
    - 이전 증여금액
    - 이전 증여일
@@ -48,7 +47,7 @@ CLARIFICATION_SYSTEM_PROMPT = """
     포함하고 이미 제공된 정보는 다시 묻지 마세요.
 19. 질문 key에 맞는 data_type을 다음 규칙으로 지정하세요.
     - recipient_name, relationship_type: string
-    - gift_amount, recipient_age, previous_gift_amount: integer
+    - gift_amount, previous_gift_amount: integer
     - recipient_is_minor, has_previous_gifts, previous_gift_same_donor: boolean
     - gift_date, previous_gift_date: date
 """.strip()
@@ -72,7 +71,6 @@ CLARIFICATION_SCHEMA = {
                             "recipient_name",
                             "gift_amount",
                             "relationship_type",
-                            "recipient_age",
                             "recipient_is_minor",
                             "gift_date",
                             "has_previous_gifts",
@@ -121,7 +119,6 @@ CLARIFICATION_SCHEMA = {
                             "recipient_name",
                             "gift_amount",
                             "relationship_type",
-                            "recipient_age",
                             "recipient_is_minor",
                             "gift_date",
                             "has_previous_gifts",
@@ -188,12 +185,12 @@ def build_clarification_prompt(
 세부 규칙:
 - assessment 또는 family 질문에서만 추가 질문을 생성하세요.
 - requires_calculation이 true이면 계산 필수값을 확인하세요.
-- 추가 질문은 recipient_age, 이전 증여 관련 정보, 그 밖의 계산 정보
+- 추가 질문은 recipient_is_minor, 이전 증여 관련 정보, 그 밖의 계산 정보
   순서로 우선 생성하세요.
 - has_previous_gifts가 없거나 확인되지 않았다면 질문하세요.
 - has_previous_gifts가 false이면 과거 증여 관련 내용을 묻지 마세요.
 - 이미 제공된 사실은 다시 묻지 마세요.
-- 최초 질문의 금액, 나이, 관계는 known_facts에 원래 값으로 보존하세요.
+- 최초 질문의 금액, 미성년 여부, 관계는 known_facts에 보존하세요.
 - 이미 나온 값을 "맞음" 또는 "예"로 재확인하지 마세요.
 - 등록 가족 목록이 있으면 전체 이름 또는 성을 생략한 이름으로 유일하게
   식별되는 한 명의 정보만 사용하세요.
