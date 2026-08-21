@@ -76,7 +76,6 @@ Content-Type: application/json
       "name": "김민수",
       "relationship_type": "parent_to_adult_child",
       "gift_amount": 60000000,
-      "recipient_age": 30,
       "recipient_is_minor": false,
       "has_previous_gifts": false,
       "previous_gift_amount": null,
@@ -90,7 +89,6 @@ Content-Type: application/json
       "name": "김민지",
       "relationship_type": "parent_to_adult_child",
       "gift_amount": 30000000,
-      "recipient_age": 25,
       "recipient_is_minor": false,
       "has_previous_gifts": true,
       "previous_gift_amount": 10000000,
@@ -130,7 +128,6 @@ FastAPI는 전환 호환성을 위해 기존 `annual_return_5y` 입력도 허용
 | `name` | `string` | O | 가족 이름 |
 | `relationship_type` | `string` | O | 증여자와 수증자의 관계 코드 |
 | `gift_amount` | `integer \| null` | X | 해당 가족의 기본 또는 계획 증여금액 |
-| `recipient_age` | `integer \| null` | X | 수증자 나이, 0~150 |
 | `recipient_is_minor` | `boolean \| null` | X | 미성년 여부 |
 | `has_previous_gifts` | `boolean \| null` | X | 과거 증여 존재 여부 |
 | `previous_gift_amount` | `integer \| null` | X | 과거 증여금액 |
@@ -138,6 +135,12 @@ FastAPI는 전환 호환성을 위해 기존 `annual_return_5y` 입력도 허용
 | `previous_gift_same_donor` | `boolean \| null` | X | 현재와 동일 증여자인지 여부 |
 | `previously_used_deduction` | `integer` | X | 기존 사용 공제액, 기본값 `0` |
 | `deduction_renewal_date` | `date \| null` | X | 공제 갱신 기준일, `YYYY-MM-DD` |
+
+수증자의 정확한 나이는 상담 API 계약에 포함하지 않는다. Spring은 가족의
+생년월일 등 내부 정보로 `recipient_is_minor`를 계산해 전송하고, FastAPI는
+이 boolean 값을 공제 구분에 사용한다. 사용자가 질문에 `17세`처럼 나이를
+직접 적은 경우 FastAPI는 미성년 여부만 파생하며 나이 값은 `facts`에 저장하거나
+응답하지 않는다.
 
 권장 `relationship_type` 값:
 
@@ -267,7 +270,6 @@ other_gift, other, jailbreak
     "recipient_name": "김민지",
     "gift_amount": 20000000,
     "relationship_type": "parent_to_adult_child",
-    "recipient_age": 25,
     "recipient_is_minor": false,
     "has_previous_gifts": true,
     "previous_gift_amount": 10000000,
@@ -336,7 +338,6 @@ if (response.status() == ChatStatus.COMPLETED) {
     "use_latest_tax_rate": true,
     "gift_amount": 60000000,
     "recipient_is_minor": false,
-    "recipient_age": null,
     "relationship_type": "parent_to_adult_child",
     "previously_used_deduction": 0
   },
@@ -351,7 +352,6 @@ if (response.status() == ChatStatus.COMPLETED) {
 | `recipient_name` | `string` | `String` | 텍스트 또는 가족 선택 |
 | `relationship_type` | `string` | `String` | 관계 선택 |
 | `gift_amount` | `integer` | `Long` | 숫자 입력 |
-| `recipient_age` | `integer` | `Integer` | 숫자 입력 |
 | `previous_gift_amount` | `integer` | `Long` | 숫자 입력 |
 | `recipient_is_minor` | `boolean` | `Boolean` | 예/아니요 |
 | `has_previous_gifts` | `boolean` | `Boolean` | 예/아니요 |
@@ -408,7 +408,6 @@ Content-Type: application/json
     "use_latest_tax_rate": true,
     "gift_amount": 60000000,
     "recipient_is_minor": false,
-    "recipient_age": null,
     "relationship_type": "parent_to_adult_child",
     "previously_used_deduction": 0
   },
@@ -435,7 +434,6 @@ Content-Type: application/json
     "use_latest_tax_rate": true,
     "gift_amount": 60000000,
     "recipient_is_minor": false,
-    "recipient_age": null,
     "relationship_type": "parent_to_adult_child",
     "has_previous_gifts": false,
     "previous_gift_amount": 0,
@@ -630,7 +628,6 @@ public record FamilyData(
     String name,
     String relationshipType,
     Long giftAmount,
-    Integer recipientAge,
     Boolean recipientIsMinor,
     Boolean hasPreviousGifts,
     Long previousGiftAmount,

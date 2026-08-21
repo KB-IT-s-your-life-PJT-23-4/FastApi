@@ -20,14 +20,13 @@ PREVIOUS_GIFT_DETAIL_KEYS = {
 }
 
 CLARIFICATION_FACT_PRIORITY = {
-    "recipient_age": 0,
+    "recipient_is_minor": 0,
     "has_previous_gifts": 1,
     "previous_gift_amount": 2,
     "previous_gift_date": 3,
     "previous_gift_same_donor": 4,
     "gift_amount": 5,
     "relationship_type": 6,
-    "recipient_is_minor": 7,
     "recipient_name": 8,
     "gift_date": 9,
 }

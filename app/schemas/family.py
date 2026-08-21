@@ -10,11 +10,6 @@ class FamilyData(BaseModel):
         default=None,
         ge=0,
     )
-    recipient_age: int | None = Field(
-        default=None,
-        ge=0,
-        le=150,
-    )
     recipient_is_minor: bool | None = None
     has_previous_gifts: bool | None = None
     previous_gift_amount: int | None = Field(
