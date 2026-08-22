@@ -159,9 +159,11 @@ def calculate_simple_gift_tax(
         previously_used_deduction,
     )
 
+    # 동일인에게 받은 10년 이내 과거 증여분의 산출세액도 합산 계산과
+    # 같은 공제 한도로 다시 계산한다. 클라이언트가 공제 사용액을 보내지
+    # 않아 기본값이 0이어도 과거 증여분의 세액을 과대 계산하지 않는다.
     previous_applied_deduction = min(
         previous_gift_amount,
-        previously_used_deduction,
         deduction_limit,
     )
     previous_taxable_base = max(

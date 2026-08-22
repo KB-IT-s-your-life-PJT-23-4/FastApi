@@ -65,6 +65,7 @@ from app.schemas.answer import AnswerSection, StructuredAnswer
 from app.services.answer_service import (
     AnswerService,
     GeneratedAnswer,
+    build_server_calculated_answer,
     render_plain_text_answer,
 )
 from app.schemas.product import EtfProductData
@@ -483,6 +484,14 @@ def test_selected_family_facts_are_used_before_clarification() -> None:
 
     service.process(ChatRequest(
         question="민지에게 2000만원을 증여하면 얼마인가요?",
+        facts={
+            "recipient_name": "이현주",
+            "gift_amount": 30_000_000,
+            "relationship_type": "parent_to_minor_child",
+            "recipient_is_minor": True,
+            "has_previous_gifts": True,
+            "previous_gift_amount": 50_000_000,
+        },
         families=[
             {
                 "family_id": 1,
@@ -1069,6 +1078,47 @@ def test_current_gift_tax_handles_progressive_bracket_crossing() -> None:
 
     # 이번 2,000만원으로 증가한 세액만 반환
     assert estimate.estimated_calculated_tax == 3_000_000
+
+
+def test_current_gift_tax_applies_deduction_to_previous_gift() -> None:
+    estimate = calculate_simple_gift_tax(
+        gift_amount=100_000_000,
+        relationship_type="parent_to_adult_child",
+        previous_gift_amount=80_000_000,
+        previously_used_deduction=0,
+        **tax_calculation_kwargs(),
+    )
+
+    assert estimate.total_gift_amount == 180_000_000
+    assert estimate.taxable_base == 130_000_000
+    assert estimate.combined_calculated_tax == 16_000_000
+    assert estimate.previous_applied_deduction == 50_000_000
+    assert estimate.previous_taxable_base == 30_000_000
+    assert estimate.previous_calculated_tax == 3_000_000
+    assert estimate.prior_gift_tax_credit == 3_000_000
+    assert estimate.estimated_calculated_tax == 13_000_000
+
+
+def test_server_calculated_answer_uses_exact_tax_values() -> None:
+    estimate = calculate_simple_gift_tax(
+        gift_amount=100_000_000,
+        relationship_type="parent_to_adult_child",
+        previous_gift_amount=80_000_000,
+        **tax_calculation_kwargs(),
+    )
+
+    answer = build_server_calculated_answer(
+        estimate.to_dict(),
+        recipient_name="김국일",
+    )
+    rendered = render_plain_text_answer(answer)
+
+    assert "김국일에게 증여할 경우" in rendered
+    assert "13,000,000원 (1,300만원)" in rendered
+    assert "130,000,000원 (13,000만원) × 20%" in rendered
+    assert "16,000,000원 (1,600만원)" in rendered
+    assert "30,000,000원 (3,000만원) × 10%" in rendered
+    assert "3,000,000원 (300만원)" in rendered
 
 
 def test_gift_tax_calculation_process_is_logged(caplog) -> None:
