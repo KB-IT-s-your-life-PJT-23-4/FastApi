@@ -8,7 +8,7 @@ from app.prompts.answer import (
     FINAL_ANSWER_SYSTEM_PROMPT,
     build_final_answer_prompt
 )
-from app.schemas.answer import StructuredAnswer
+from app.schemas.answer import AnswerSection, StructuredAnswer
 
 
 @dataclass(frozen=True)
@@ -77,6 +77,100 @@ def render_plain_text_answer(
         block for block in blocks if block
     )
 
+
+def format_won(amount: int) -> str:
+    formatted = f"{amount:,}원"
+    if amount and amount % 10_000 == 0:
+        formatted += f" ({amount // 10_000:,}만원)"
+    return formatted
+
+
+def build_server_calculated_answer(
+    calculation: dict,
+    *,
+    sources: list[str] | None = None,
+    recipient_name: str | None = None,
+) -> StructuredAnswer:
+    """LLM이 서버 계산 결과의 숫자를 변경하지 못하게 답변을 확정한다."""
+    gift_amount = int(calculation["gift_amount"])
+    previous_gift_amount = int(calculation["previous_gift_amount"])
+    total_gift_amount = int(calculation["total_gift_amount"])
+    applied_deduction = int(calculation["applied_deduction"])
+    taxable_base = int(calculation["taxable_base"])
+    tax_rate_percent = int(calculation["tax_rate_percent"])
+    progressive_deduction = int(calculation["progressive_deduction"])
+    combined_calculated_tax = int(
+        calculation["combined_calculated_tax"]
+    )
+    previous_taxable_base = int(calculation["previous_taxable_base"])
+    previous_tax_rate_percent = int(
+        calculation["previous_tax_rate_percent"]
+    )
+    previous_progressive_deduction = int(
+        calculation["previous_progressive_deduction"]
+    )
+    prior_gift_tax_credit = int(calculation["prior_gift_tax_credit"])
+    estimated_calculated_tax = int(
+        calculation["estimated_calculated_tax"]
+    )
+
+    subject = (
+        f"{recipient_name}에게 증여할 경우"
+        if recipient_name
+        else "이번 증여의 경우"
+    )
+    calculation_items = [
+        "합산 증여금액: "
+        f"현재 {format_won(gift_amount)} + "
+        f"과거 {format_won(previous_gift_amount)} = "
+        f"{format_won(total_gift_amount)}",
+        "과세표준: "
+        f"{format_won(total_gift_amount)} - "
+        f"공제액 {format_won(applied_deduction)} = "
+        f"{format_won(taxable_base)}",
+        "합산 산출세액: "
+        f"{format_won(taxable_base)} × {tax_rate_percent}% - "
+        f"누진공제액 {format_won(progressive_deduction)} = "
+        f"{format_won(combined_calculated_tax)}",
+    ]
+    if previous_gift_amount > 0:
+        calculation_items.extend([
+            "과거 증여분 산출세액: "
+            f"과거 과세표준 {format_won(previous_taxable_base)} × "
+            f"{previous_tax_rate_percent}% - 누진공제액 "
+            f"{format_won(previous_progressive_deduction)} = "
+            f"{format_won(prior_gift_tax_credit)}",
+            "이번 증여 간이 세액: "
+            f"{format_won(combined_calculated_tax)} - "
+            f"기납부세액공제 {format_won(prior_gift_tax_credit)} = "
+            f"{format_won(estimated_calculated_tax)}",
+        ])
+
+    return StructuredAnswer(
+        summary=(
+            f"{subject}, 이번 증여분 예상 증여세는 약 "
+            f"{format_won(estimated_calculated_tax)}입니다."
+        ),
+        sections=[
+            AnswerSection(
+                title="예상 결과",
+                items=[
+                    "이번 증여분 예상 증여세: "
+                    f"{format_won(estimated_calculated_tax)}"
+                ],
+            ),
+            AnswerSection(
+                title="계산 과정",
+                items=calculation_items,
+            ),
+        ],
+        sources=sources or [],
+        notice=(
+            "간이 추정 결과이며 신고세액공제, 세대생략 할증, "
+            "재산평가 등에 따라 최종 세액이 달라질 수 있습니다."
+        ),
+    )
+
 class AnswerService:
     def __init__(
         self,
@@ -136,6 +230,18 @@ class AnswerService:
         structured_answer = StructuredAnswer.model_validate_json(
             response.output_text
         )
+        calculation = facts.get("tax_calculation")
+        if isinstance(calculation, dict):
+            recipient_name = facts.get("recipient_name")
+            structured_answer = build_server_calculated_answer(
+                calculation,
+                sources=structured_answer.sources,
+                recipient_name=(
+                    recipient_name
+                    if isinstance(recipient_name, str)
+                    else None
+                ),
+            )
         if intent in {"product", "procedure"}:
             structured_answer = structured_answer.model_copy(
                 update={

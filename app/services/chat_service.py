@@ -241,9 +241,9 @@ class ChatService:
         )
         facts = {
             **DEFAULT_FACTS,
+            **request.facts,
             **selected_family_facts,
             **intent_result.extracted_facts,
-            **request.facts
         }
         if intent in {"family", "assessment"}:
             facts = normalize_calculation_facts(
