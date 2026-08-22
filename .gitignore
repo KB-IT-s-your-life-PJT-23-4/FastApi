@@ -1,6 +1,7 @@
 # Environment variables and local secrets
 .env
 .env.*
+app.env
 !.env.example
 
 # Python bytecode and caches
