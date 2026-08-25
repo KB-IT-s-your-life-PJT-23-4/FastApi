@@ -28,7 +28,7 @@ class ChatRequest(BaseModel):
     )
     families: list[FamilyData] = Field(
         default_factory=list,
-        max_length=3,
+        max_length=10,
     )
     products: list[ProductData] = Field(
         default_factory=list,
