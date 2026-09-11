@@ -99,7 +99,7 @@ pipeline {
         stage('Trigger Deploy') {
             steps {
                 build(
-                    job: 'deploy(pull ec2)',
+                    job: 'mirizoom-deploy',
                     wait: true,
                     propagate: true,
                     parameters: [
